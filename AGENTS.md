@@ -1,0 +1,170 @@
+# AGENTS.md
+
+本文件定义 `callit` 项目的代理协作规范。所有代理在本仓库执行任务时必须遵守。
+
+## 1. 语言与沟通
+
+1. 仅使用中文输出（分析、说明、注释、文档）。
+2. 回答先给结论，再给关键细节。
+3. 遇到不确定项，先在仓库内搜索确认，再提问。
+
+## 2. 项目概览
+
+`callit` 是一个轻量级、自建、基于 Docker 的个人 Serverless 平台。
+
+- Backend: Go + Gin
+- Frontend: React + Vite + HeroUI
+- Database: SQLite3
+- Runtime: Python3 / Node.js
+- Router 端口: `3100`
+- Admin 端口: `3101`
+
+## 3. 当前目录约定
+
+```text
+cmd/main.go                 # 程序入口，启动 Router/Admin 双服务
+internal/admin              # Admin API（鉴权、Worker 管理、文件管理）
+internal/router             # Router 动态执行入口
+internal/executor           # 脚本执行与超时控制
+internal/requestparse       # JSON/form/multipart 解析
+internal/registry           # 路由内存索引
+internal/db                 # SQLite 持久化
+internal/model              # 领域模型（包含 FuncInput/FuncRequest/FuncOutput）
+pages/src                   # Admin 服务的前端源码（Settings/Workers/WorkerInfo/Dependencies）
+public                      # 前端构建产物（由后端直接托管）
+migrations/001_init.sql     # 建表 SQL
+.github/workflows           # CI（镜像构建推送）
+```
+
+## 4. 运行与开发命令
+
+### 4.1 本地运行
+
+先构建前端：
+
+```bash
+cd pages
+pnpm run build
+cd ..
+rm -rf public/*
+cp -r pages/dist/* public/
+```
+
+再启动后端：
+
+```bash
+export ADMIN_TOKEN=your-token
+go run ./cmd
+```
+
+前端开发模式：
+
+```bash
+cd pages
+npm run dev
+```
+
+### 4.2 单元/集成测试
+
+```bash
+go test ./...
+```
+
+要求：单次测试执行尽量控制在 60 秒内。
+
+### 4.3 Docker 运行
+
+```bash
+docker compose up --build
+```
+
+## 5. 数据与文件约定
+
+- DB: `data/app.db`
+- Worker 目录: `data/workers/<worker_id>/`
+- 临时上传目录: `data/temps/<request_id>/`
+- multipart 上传文件在请求结束后必须清理（`defer RemoveAll`）
+
+## 6. 核心契约（禁止随意破坏）
+
+### 6.1 脚本输入（STDIN）
+
+模型名：`FuncInput` / `FuncRequest`
+
+```json
+{
+  "request": {
+    "method": "POST",
+    "uri": "/api/test?name=callit",
+    "url": "http://127.0.0.1:3100/api/test?name=callit",
+    "route_suffix": "/",
+    "headers": {},
+    "body": "raw string",
+    "json": {}
+  }
+}
+```
+
+### 6.2 脚本输出（stdout JSON）
+
+模型名：`FuncOutput`
+
+```json
+{
+  "status": 200,
+  "headers": {"X-Trace": "abc"},
+  "body": {"ok": true}
+}
+```
+
+- `status` 默认 200
+- `headers` 可选
+- 非法 JSON 或非法协议返回 500
+
+### 6.3 统一错误结构
+
+```json
+{
+  "error": "message",
+  "request_id": "uuid"
+}
+```
+
+## 7. 代码规范
+
+1. 优先保证正确性与可读性，不保留无用兼容代码。
+2. 修改功能时同步更新相关测试。
+3. 关键流程允许添加简洁中文注释，避免注释噪音。
+4. 新增路径、包名、模型名时，必须全局搜索引用并一次性更新。
+
+## 8. 变更流程（代理执行）
+
+1. 先搜索并阅读相关代码，再动手修改。
+2. 修改后至少执行：
+   - `gofmt -w`（仅针对改动文件）
+   - `go test ./...`
+3. 在结果说明中明确：改了什么、为什么改、如何验证。
+
+## 9. 风险操作规范
+
+以下操作必须先得到明确确认：
+
+- 删除文件/目录、批量替换关键代码
+- `git commit` / `git push`
+- `git reset --hard`、覆盖式回滚
+- 修改生产环境配置或敏感凭据处理方式
+
+## 10. CI / 镜像
+
+- CI 文件：`.github/workflows/build_and_push.yaml`
+- 构建与推送在 GitHub Actions 云端执行
+- 默认镜像目标：`ghcr.io/<owner>/callit`
+
+## 11. 完成定义（DoD）
+
+任务完成前需满足：
+
+1. 功能实现与需求一致。
+2. 相关测试通过。
+3. 无明显回归风险与路径残留（重命名场景尤其注意）。
+4. 文档或示例（如影响使用方式）已同步更新。

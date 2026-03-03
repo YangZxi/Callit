@@ -1,0 +1,37 @@
+{
+  "name": "callit-react",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host --port 3180",
+    "build": "vite build",
+    "preview": "vite preview --host --port 4173"
+  },
+  "dependencies": {
+    "@heroui/react": "2.8.5",
+    "@iconify/react": "6.0.2",
+    "@monaco-editor/react": "^4.7.0",
+    "@react-aria/ssr": "3.9.10",
+    "@react-aria/visually-hidden": "3.8.28",
+    "clsx": "2.1.1",
+    "framer-motion": "11.18.2",
+    "monaco-editor": "^0.55.1",
+    "path-browserify": "1.0.1",
+    "react": "19.2.1",
+    "react-dom": "19.2.1",
+    "react-router-dom": "7.0.2",
+    "tailwind-variants": "3.1.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.1.11",
+    "@types/node": "22.13.1",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react-swc": "3.7.0",
+    "postcss": "8.5.6",
+    "tailwindcss": "4.1.11",
+    "typescript": "5.6.3",
+    "vite": "5.4.11"
+  }
+}
