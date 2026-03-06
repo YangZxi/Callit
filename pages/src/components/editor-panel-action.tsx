@@ -22,6 +22,7 @@ export default function EditorPanelAction(props: EditorPanelActionProps) {
     <ButtonGroup variant="flat">
       <Button isDisabled={disabled} isLoading={loading} 
         color="primary"
+        size="sm"
         onPress={onSave}
       >
         保存
@@ -35,7 +36,7 @@ export default function EditorPanelAction(props: EditorPanelActionProps) {
         }}
       >
         <DropdownTrigger>
-          <Button isIconOnly aria-label="更多操作">
+          <Button size="sm" isIconOnly aria-label="更多操作">
             <ChevronDownIcon />
           </Button>
         </DropdownTrigger>

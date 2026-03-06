@@ -1,5 +1,17 @@
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Chip, Listbox, ListboxItem, addToast } from "@heroui/react";
+import {
+	Button,
+	Chip,
+	Listbox,
+	ListboxItem,
+	Modal,
+	ModalBody,
+	ModalContent,
+	ModalFooter,
+	ModalHeader,
+	Pagination,
+	addToast,
+} from "@heroui/react";
 import Editor, { DiffEditor, OnMount } from "@monaco-editor/react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -28,6 +40,27 @@ type FileContentResp = {
 	preview_data_url?: string;
 };
 
+type WorkerLogItem = {
+	id: string;
+	worker_id: string;
+	request_id: string;
+	status: number;
+	stdout: string;
+	stderr: string;
+	error: string;
+	duration_ms: number;
+	created_at: string;
+};
+
+type WorkerLogsPageResp = {
+	page: number;
+	page_size: number;
+	total: number;
+	data: WorkerLogItem[];
+};
+
+const workerLogsPageSize = 20;
+
 function languageFromFilename(filename: string): string {
 	if (filename.endsWith(".py")) return "python";
 	if (filename.endsWith(".js")) return "javascript";
@@ -46,6 +79,14 @@ function buildDiffFilename(original: string): string {
 		return `${original}${marker}`;
 	}
 	return `${original.slice(0, dotIndex)}${marker}${original.slice(dotIndex)}`;
+}
+
+function formatLogTime(raw: string): string {
+	const dt = new Date(raw);
+	if (Number.isNaN(dt.getTime())) {
+		return raw;
+	}
+	return dt.toLocaleString();
 }
 
 export default function WorkerDetailPage() {
@@ -68,6 +109,12 @@ export default function WorkerDetailPage() {
 	const [fileBusy, setFileBusy] = useState(false);
 	const [fnBusy, setFnBusy] = useState(false);
 	const [httpDrawerOpen, setHttpDrawerOpen] = useState(false);
+	const [logModalOpen, setLogModalOpen] = useState(false);
+	const [logLoading, setLogLoading] = useState(false);
+	const [logPage, setLogPage] = useState(1);
+	const [logTotal, setLogTotal] = useState(0);
+	const [logItems, setLogItems] = useState<WorkerLogItem[]>([]);
+	const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set());
 
 	const selectedKeys = useMemo(() => (selectedFile ? new Set<string>([selectedFile]) : new Set<string>()), [selectedFile]);
 	const defaultRunUrl = useMemo(() => {
@@ -75,10 +122,22 @@ export default function WorkerDetailPage() {
 		return `${window.location.protocol}//${window.location.host}${workerInfo.route}`;
 	}, [workerInfo]);
 	const isDiffMode = activeDiffFile !== "";
+	const logTotalPages = useMemo(() => Math.max(1, Math.ceil(logTotal / workerLogsPageSize)), [logTotal]);
 
 	const loadWorkerInfo = useCallback(async () => {
 		const data = await api.get<WorkerItem>(`/workers/${id}`);
 		setWorkerInfo(data);
+	}, [id]);
+
+	const loadWorkerLogs = useCallback(async (page: number) => {
+		setLogLoading(true);
+		try {
+			const data = await api.get<WorkerLogsPageResp>(`/workers/${id}/logs?page=${page}&page_size=${workerLogsPageSize}`);
+			setLogItems(data.data || []);
+			setLogTotal(data.total || 0);
+		} finally {
+			setLogLoading(false);
+		}
 	}, [id]);
 
 	const fetchFileContent = useCallback(async (filename: string, options?: { hideToast?: boolean }) => {
@@ -167,6 +226,11 @@ export default function WorkerDetailPage() {
 		if (!selectedFile) return;
 		void loadFileContent(selectedFile);
 	}, [selectedFile, loadFileContent]);
+
+	useEffect(() => {
+		if (!logModalOpen) return;
+		void loadWorkerLogs(logPage);
+	}, [logModalOpen, logPage, loadWorkerLogs]);
 
 	const saveCurrentFile = useCallback(async () => {
 		if (!selectedFile || saving) return;
@@ -326,6 +390,24 @@ export default function WorkerDetailPage() {
 		}
 	};
 
+	const openWorkerLogsModal = () => {
+		setLogPage(1);
+		setExpandedLogIds(new Set());
+		setLogModalOpen(true);
+	};
+
+	const toggleLogDetails = (logID: string) => {
+		setExpandedLogIds((prev) => {
+			const next = new Set(prev);
+			if (next.has(logID)) {
+				next.delete(logID);
+			} else {
+				next.add(logID);
+			}
+			return next;
+		});
+	};
+
 	const handleChatFilesChanged = useCallback(async () => {
 		await loadFiles(selectedFile || undefined);
 		if (selectedFile) {
@@ -359,6 +441,7 @@ export default function WorkerDetailPage() {
 						</div>
 						<div className="flex items-center justify-end gap-2">
 							<Button color="primary" size="sm" variant="flat" onPress={() => setHttpDrawerOpen(true)}>Testing</Button>
+							<Button color="secondary" size="sm" variant="flat" onPress={openWorkerLogsModal}>运行日志</Button>
 							<Button color="default" size="sm" variant="flat" onPress={() => navigate("/workers")}>返回列表</Button>
 							<Button color={workerInfo.enabled ? "warning" : "success"} isLoading={fnBusy} size="sm" variant="flat" onPress={toggleWorkerEnabled}>
 								{workerInfo.enabled ? "停用 Worker" : "启用 Worker"}
@@ -495,6 +578,97 @@ export default function WorkerDetailPage() {
 				onClose={() => setHttpDrawerOpen(false)}
 				defaultUrl={defaultRunUrl}
 			/>
+			<Modal
+				isOpen={logModalOpen}
+				size="5xl"
+				onOpenChange={(open) => {
+					setLogModalOpen(open);
+					if (!open) {
+						setExpandedLogIds(new Set());
+					}
+				}}
+			>
+				<ModalContent>
+					{(close) => (
+						<>
+							<ModalHeader>最近运行日志</ModalHeader>
+							<ModalBody>
+								{logLoading ? (
+									<p className="text-sm text-default-500">正在加载运行日志...</p>
+								) : null}
+								{!logLoading && logItems.length === 0 ? (
+									<div className="rounded-lg border border-default-200 px-3 py-4 text-sm text-default-500">
+										暂无运行日志
+									</div>
+								) : null}
+								{!logLoading && logItems.length > 0 ? (
+									<div className="flex max-h-[60vh] flex-col gap-2 overflow-auto pr-1">
+										{logItems.map((item) => {
+											const expanded = expandedLogIds.has(item.id);
+											return (
+												<div key={item.id} className="rounded-lg border border-default-200 p-3">
+													<div className="flex items-start justify-between gap-3">
+														<div className="min-w-0">
+															<p className="truncate text-sm font-medium text-default-800">
+																request_id: {item.request_id}
+															</p>
+															<p className="truncate text-xs text-default-500">
+																{formatLogTime(item.created_at)} · 状态 {item.status} · 耗时 {item.duration_ms}ms
+															</p>
+														</div>
+														<Button color="default" size="sm" variant="flat" onPress={() => toggleLogDetails(item.id)}>
+															{expanded ? "收起详情" : "展开详情"}
+														</Button>
+													</div>
+													{expanded ? (
+														<div className="mt-3 space-y-2">
+															{item.error ? (
+																<div>
+																	<p className="mb-1 text-xs font-medium text-danger">error</p>
+																	<pre className="max-h-40 overflow-auto rounded-md bg-danger-50 p-2 font-mono text-xs whitespace-pre-wrap break-words text-danger-700">{item.error}</pre>
+																</div>
+															) : null}
+															{item.stderr ? (
+																<div>
+																	<p className="mb-1 text-xs font-medium text-warning">stderr</p>
+																	<pre className="max-h-40 overflow-auto rounded-md bg-warning-50 p-2 font-mono text-xs whitespace-pre-wrap break-words text-warning-700">{item.stderr}</pre>
+																</div>
+															) : null}
+															{item.stdout ? (
+																<div>
+																	<p className="mb-1 text-xs font-medium text-success">stdout</p>
+																	<pre className="max-h-40 overflow-auto rounded-md bg-success-50 p-2 font-mono text-xs whitespace-pre-wrap break-words text-success-700">{item.stdout}</pre>
+																</div>
+															) : null}
+															{!item.error && !item.stderr && !item.stdout ? (
+																<p className="text-xs text-default-400">无详细输出</p>
+															) : null}
+														</div>
+													) : null}
+												</div>
+											);
+										})}
+									</div>
+								) : null}
+							</ModalBody>
+							<ModalFooter className="flex items-center justify-between">
+								<div>
+									{logTotal > workerLogsPageSize ? (
+										<Pagination
+											showControls
+											color="success"
+											page={logPage}
+											total={logTotalPages}
+											onChange={setLogPage}
+										/>
+									) : null}
+								</div>
+								<Button variant="flat" onPress={close}>关闭</Button>
+							</ModalFooter>
+						</>
+					)}
+				</ModalContent>
+			</Modal>
 			<div className="absolute z-10000 bottom-4 right-4 z-40">
 				<Chatbox workerId={id} onFilesChanged={handleChatFilesChanged} />
 			</div>

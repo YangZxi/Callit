@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +31,12 @@ import (
 )
 
 const adminAuthCookieName = "callit_admin_token"
+
+const (
+	defaultWorkerLogsPage     = 1
+	defaultWorkerLogsPageSize = 20
+	maxWorkerLogsPageSize     = 100
+)
 
 // Server 表示 Admin 服务。
 type Server struct {
@@ -109,6 +116,7 @@ func NewEngine(store *db.Store, reg *registry.Registry, dataDir string, adminTok
 		api.PUT("/workers/:id", s.updateWorker)
 		api.GET("/workers", s.listWorkers)
 		api.GET("/workers/:id", s.getWorker)
+		api.GET("/workers/:id/logs", s.listWorkerLogs)
 		api.DELETE("/workers/:id", s.deleteWorker)
 		api.POST("/workers/:id/files", s.uploadFiles)
 		api.GET("/workers/:id/files", s.listWorkerFiles)
@@ -353,6 +361,60 @@ func (s *Server) getWorker(c *gin.Context) {
 		return
 	}
 	apiSuccess(c, fn)
+}
+
+func (s *Server) listWorkerLogs(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		apiError(c, http.StatusBadRequest, "id 不能为空")
+		return
+	}
+	if _, err := s.store.GetWorkerByID(c.Request.Context(), id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			apiError(c, http.StatusNotFound, "函数不存在")
+			return
+		}
+		apiError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	page := defaultWorkerLogsPage
+	rawPage := strings.TrimSpace(c.Query("page"))
+	if rawPage != "" {
+		n, err := strconv.Atoi(rawPage)
+		if err != nil || n <= 0 {
+			apiError(c, http.StatusBadRequest, "page 必须是正整数")
+			return
+		}
+		page = n
+	}
+
+	pageSize := defaultWorkerLogsPageSize
+	rawPageSize := strings.TrimSpace(c.Query("page_size"))
+	if rawPageSize != "" {
+		n, err := strconv.Atoi(rawPageSize)
+		if err != nil || n <= 0 {
+			apiError(c, http.StatusBadRequest, "page_size 必须是正整数")
+			return
+		}
+		if n > maxWorkerLogsPageSize {
+			apiError(c, http.StatusBadRequest, fmt.Sprintf("page_size 不能超过 %d", maxWorkerLogsPageSize))
+			return
+		}
+		pageSize = n
+	}
+
+	logs, total, err := s.store.ListWorkerLogsPaged(c.Request.Context(), id, page, pageSize)
+	if err != nil {
+		apiError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	apiSuccess(c, gin.H{
+		"page":      page,
+		"page_size": pageSize,
+		"total":     total,
+		"data":      logs,
+	})
 }
 
 func (s *Server) deleteWorker(c *gin.Context) {

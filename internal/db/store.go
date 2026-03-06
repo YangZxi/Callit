@@ -207,6 +207,59 @@ VALUES(?,?,?,?,?,?,?,?)`,
 	return err
 }
 
+// ListWorkerLogsPaged 分页查询 Worker 执行日志。
+func (s *Store) ListWorkerLogsPaged(ctx context.Context, workerID string, page int, pageSize int) ([]model.WorkerLog, int, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+
+	var total int
+	if err := s.db.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM execution_logs
+WHERE worker_id = ?`, workerID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * pageSize
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, worker_id, request_id, status, stdout, stderr, error, duration_ms, created_at
+FROM execution_logs
+WHERE worker_id = ?
+ORDER BY created_at DESC, id DESC
+LIMIT ? OFFSET ?`, workerID, pageSize, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	result := make([]model.WorkerLog, 0, pageSize)
+	for rows.Next() {
+		var item model.WorkerLog
+		if err := rows.Scan(
+			&item.ID,
+			&item.WorkerID,
+			&item.RequestID,
+			&item.Status,
+			&item.Stdout,
+			&item.Stderr,
+			&item.Error,
+			&item.DurationMS,
+			&item.CreatedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		result = append(result, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return result, total, nil
+}
+
 // IsNotFound 判断是否为未找到错误。
 func IsNotFound(err error) bool {
 	return errors.Is(err, sql.ErrNoRows)
