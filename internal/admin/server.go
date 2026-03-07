@@ -45,6 +45,7 @@ type Server struct {
 	dataDir     string
 	adminToken  string
 	chatHandler *chat.Handler
+	configMu    sync.RWMutex
 
 	dependencyTaskMu      sync.Mutex
 	dependencyTaskRunning bool
@@ -88,13 +89,13 @@ func apiError(c *gin.Context, httpStatus int, msg string) {
 }
 
 // NewEngine 创建 Admin Gin 引擎。
-func NewEngine(store *db.Store, reg *registry.Registry, dataDir string, adminToken string, aiConfig config.AIConfig) *gin.Engine {
+func NewEngine(store *db.Store, reg *registry.Registry, cfg config.Config) *gin.Engine {
 	s := &Server{
 		store:       store,
 		reg:         reg,
-		dataDir:     dataDir,
-		adminToken:  adminToken,
-		chatHandler: chat.NewHandler(store, dataDir, aiConfig),
+		dataDir:     cfg.DataDir,
+		adminToken:  cfg.AdminToken,
+		chatHandler: chat.NewHandler(store, cfg.DataDir, cfg.AppConfig),
 	}
 	e := gin.New()
 	e.Use(gin.Recovery(), common.RequestIDMiddleware())
@@ -129,6 +130,9 @@ func NewEngine(store *db.Store, reg *registry.Registry, dataDir string, adminTok
 		api.GET("/workers/:id/chat/session", s.chatHandler.GetSession)
 		api.POST("/workers/:id/chat/stream", s.chatHandler.Stream)
 		api.POST("/workers/:id/chat/session/clear", s.chatHandler.ClearSession)
+
+		api.GET("/config", s.AdminGetConfigHandler(&cfg))
+		api.POST("/config", s.AdminUpsertConfigHandler(&cfg))
 	}
 
 	// 静态资源

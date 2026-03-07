@@ -6,8 +6,9 @@ import Footer from "./components/footer";
 import HomePage from "./pages/HomePage";
 import WorkerListPage from "./pages/WorkerListPage";
 import WorkerDetailPage from "./pages/WorkerDetailPage";
-import AboutPage from "./pages/AboutPage";
 import DependenciesPage from "./pages/DependenciesPage";
+import ConfigManagePage from "./pages/ConfigManagePage";
+import AboutPage from "./pages/AboutPage";
 import { checkAdminAuthenticated } from "./lib/admin-auth";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -53,6 +54,7 @@ function App() {
         <Route path="/workers" element={<ProtectedRoute><WorkerListPage /></ProtectedRoute>} />
         <Route path="/workers/:id" element={<ProtectedRoute><WorkerDetailPage /></ProtectedRoute>} />
         <Route path="/dependencies" element={<ProtectedRoute><DependenciesPage /></ProtectedRoute>} />
+        <Route path="/config" element={<ProtectedRoute><ConfigManagePage /></ProtectedRoute>} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="*" element={<HomePage />} />
       </Routes>

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -40,19 +41,39 @@ type chatStreamRequest struct {
 type Handler struct {
 	store     *db.Store
 	dataDir   string
-	aiConfig  config.AIConfig
+	appConfig config.AppConfig
 	chatStore *chatSessionStore
 	aiClient  *openAIClient
+	configMu  sync.RWMutex
 }
 
-func NewHandler(store *db.Store, dataDir string, aiConfig config.AIConfig) *Handler {
+func NewHandler(store *db.Store, dataDir string, aiConfig config.AppConfig) *Handler {
 	return &Handler{
 		store:     store,
 		dataDir:   dataDir,
-		aiConfig:  aiConfig,
+		appConfig: aiConfig,
 		chatStore: newChatSessionStore(filepath.Join(dataDir, "chat_sessions")),
 		aiClient:  newOpenAIClient(aiConfig),
 	}
+}
+
+func (h *Handler) ReloadAIConfig(cfg config.AppConfig) {
+	h.configMu.Lock()
+	h.appConfig = cfg
+	h.aiClient = newOpenAIClient(cfg)
+	h.configMu.Unlock()
+}
+
+func (h *Handler) currentAIClient() *openAIClient {
+	h.configMu.RLock()
+	defer h.configMu.RUnlock()
+	return h.aiClient
+}
+
+func (h *Handler) currentMaxContextTokens() int {
+	h.configMu.RLock()
+	defer h.configMu.RUnlock()
+	return h.appConfig.AI_MaxContextTokens
 }
 
 func (h *Handler) GetSession(c *gin.Context) {
@@ -104,7 +125,8 @@ func (h *Handler) ClearSession(c *gin.Context) {
 }
 
 func (h *Handler) Stream(c *gin.Context) {
-	if err := h.aiClient.Validate(); err != nil {
+	aiClient := h.currentAIClient()
+	if err := aiClient.Validate(); err != nil {
 		writeError(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -203,7 +225,7 @@ func (h *Handler) Stream(c *gin.Context) {
 		return
 	}
 
-	assistantContent, err := h.aiClient.StreamChat(c.Request.Context(), aiMessages, func(delta string) error {
+	assistantContent, err := aiClient.StreamChat(c.Request.Context(), aiMessages, func(delta string) error {
 		return writeSSEEvent(c, "delta", gin.H{"text": delta})
 	})
 	if err != nil {
@@ -275,7 +297,7 @@ func (h *Handler) buildSystemPrompt(mode chatMode, workerDir string, runtime str
 		return agentPrompt, nil
 	}
 
-	maxTokens := h.aiConfig.MaxContextTokens
+	maxTokens := h.currentMaxContextTokens()
 	if maxTokens <= 0 {
 		maxTokens = 16000
 	}

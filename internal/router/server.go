@@ -3,7 +3,6 @@ package router
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -84,10 +83,9 @@ func (s *Server) handleInvoke(c *gin.Context) {
 
 	input := model.WorkerInput{
 		Request: model.WorkerRequest{
-			Method: method,
-			URI:    buildRouteSuffix(fn.Route, c.Request.URL.RequestURI()),
-			// todo, fix schema and host when behind proxy
-			URL:     fmt.Sprintf("%s://%s%s", c.Request.URL.Scheme, c.Request.Host, c.Request.URL.String()),
+			Method:  method,
+			URI:     buildRouteSuffix(fn.Route, c.Request.URL.RequestURI()),
+			URL:     buildFullURL(c.Request),
 			Params:  buildQueryParams(c.Request.URL),
 			Headers: headers,
 			Body:    requestBody,
@@ -202,6 +200,45 @@ func shouldStripRawBody(contentType string) bool {
 	}
 	normalized := strings.ToLower(strings.TrimSpace(contentType))
 	return strings.HasPrefix(normalized, "multipart/form-data")
+}
+
+func buildFullURL(req *http.Request) string {
+	if req == nil || req.URL == nil {
+		return ""
+	}
+
+	scheme := headerFirstValue(req.Header.Get("X-Forwarded-Proto"))
+	host := headerFirstValue(req.Header.Get("X-Forwarded-Host"))
+
+	if scheme == "" {
+		scheme = strings.TrimSpace(req.URL.Scheme)
+	}
+	if scheme == "" {
+		if req.TLS != nil {
+			scheme = "https"
+		} else {
+			scheme = "http"
+		}
+	}
+	if host == "" {
+		host = strings.TrimSpace(req.Host)
+	}
+	if host == "" {
+		host = strings.TrimSpace(req.URL.Host)
+	}
+
+	u := *req.URL
+	u.Scheme = scheme
+	u.Host = host
+	return u.String()
+}
+
+func headerFirstValue(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	first := strings.TrimSpace(strings.Split(raw, ",")[0])
+	return first
 }
 
 // parseRequetBodyToJson 按请求 Content-Type 解析请求体。

@@ -4,6 +4,7 @@ export const siteConfig = {
   navItems: [
     { label: "Workers", href: "/workers", mobile: true },
     { label: "Dependencies", href: "/dependencies", mobile: true },
+    { label: "Config", href: "/config", mobile: true },
     // { label: "ClipSync", href: "/clipsync" },
     { label: "About", href: "/about" },
   ],

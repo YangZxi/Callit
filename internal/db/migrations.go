@@ -37,4 +37,10 @@ ON execution_logs(worker_id, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_execution_logs_request_id
 ON execution_logs(request_id);
+
+CREATE TABLE IF NOT EXISTS app_config (
+    "key" TEXT PRIMARY KEY,
+    "value" TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 `

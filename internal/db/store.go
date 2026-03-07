@@ -15,7 +15,8 @@ import (
 
 // Store 封装 SQLite 持久化操作。
 type Store struct {
-	db *sql.DB
+	db        *sql.DB
+	AppConfig *AppConfigDao
 }
 
 // methods 字段保留在数据库中用于兼容历史表结构，不再参与业务逻辑。
@@ -38,7 +39,9 @@ func Open(dbPath string) (*Store, error) {
 		database.Close()
 		return nil, fmt.Errorf("执行迁移失败: %w", err)
 	}
-	return &Store{db: database}, nil
+	store := &Store{db: database}
+	store.AppConfig = &AppConfigDao{store: database}
+	return store, nil
 }
 
 // Close 关闭数据库连接。

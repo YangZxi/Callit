@@ -1,106 +1,227 @@
 package config
 
 import (
-	"fmt"
+	"context"
 	"os"
-	"path/filepath"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
-const (
-	defaultRouterPort = 3100
-	defaultAdminPort  = 3101
-	defaultDataDir    = "data"
-	defaultAIBaseURL  = "https://api.openai.com/v1"
-	defaultAIModel    = "gpt-4o-mini"
-	defaultAITimeout  = 120000
-	defaultAIMaxToken = 16000
-)
-
-// AIConfig 表示 AI 客户端配置。
-type AIConfig struct {
-	BaseURL          string
-	APIKey           string
-	Model            string
-	MaxContextTokens int
-	TimeoutMS        int
+type AppConfig struct {
+	// AI
+	AI_BaseURL          string `config:"AI_BASE_URL"`
+	AI_APIKey           string `config:"AI_API_KEY"`
+	AI_Model            string `config:"AI_MODEL"`
+	AI_MaxContextTokens int    `config:"AI_MAX_CONTEXT_TOKENS"`
+	AI_TimeoutMS        int    `config:"AI_TIMEOUT_MS"`
 }
 
-// Config 表示应用运行配置。
 type Config struct {
-	RouterPort int
-	AdminPort  int
-	AdminToken string
-	DataDir    string
-	DBPath     string
-	AI         AIConfig
+	RouterPort           int
+	AdminPort            int
+	DataDir              string
+	DatabasePath         string
+	WorkersDir           string
+	WorkerRunningTempDir string
+	ChatSessionsDir      string
+	RuntimeLibDir        string
+	MaxFileSize          int64
+	AdminToken           string
+	LogLevel             string
+	AppConfig            AppConfig
 }
 
-// Load 从环境变量加载配置。
-func Load() (Config, error) {
-	cfg := Config{}
-
-	routerPort, err := readIntEnv("ROUTER_PORT", defaultRouterPort)
-	if err != nil {
-		return Config{}, err
-	}
-	adminPort, err := readIntEnv("ADMIN_PORT", defaultAdminPort)
-	if err != nil {
-		return Config{}, err
-	}
-
-	dataDir := os.Getenv("DATA_DIR")
-	if dataDir == "" {
-		dataDir = defaultDataDir
-	}
-
-	adminToken := os.Getenv("ADMIN_TOKEN")
-	if adminToken == "" {
-		return Config{}, fmt.Errorf("环境变量 ADMIN_TOKEN 不能为空")
-	}
-
-	cfg.RouterPort = routerPort
-	cfg.AdminPort = adminPort
-	cfg.AdminToken = adminToken
-	cfg.DataDir = dataDir
-	cfg.DBPath = filepath.Join(dataDir, "app.db")
-
-	maxTokens, err := readIntEnv("AI_MAX_CONTEXT_TOKENS", defaultAIMaxToken)
-	if err != nil {
-		return Config{}, err
-	}
-	timeoutMS, err := readIntEnv("AI_TIMEOUT_MS", defaultAITimeout)
-	if err != nil {
-		return Config{}, err
-	}
-
-	aiBaseURL := strings.TrimSpace(os.Getenv("AI_BASE_URL"))
-	if aiBaseURL == "" {
-		aiBaseURL = defaultAIBaseURL
-	}
-	aiModel := strings.TrimSpace(os.Getenv("AI_MODEL"))
-	if aiModel == "" {
-		aiModel = defaultAIModel
-	}
-	cfg.AI = AIConfig{
-		BaseURL:          strings.TrimRight(aiBaseURL, "/"),
-		APIKey:           strings.TrimSpace(os.Getenv("AI_API_KEY")),
-		Model:            aiModel,
-		MaxContextTokens: maxTokens,
-		TimeoutMS:        timeoutMS,
-	}
-	return cfg, nil
+type AppConfigDao interface {
+	GetConfigs(ctx context.Context) (map[string]string, error)
 }
 
-func readIntEnv(key string, def int) (int, error) {
-	val := os.Getenv(key)
-	if val == "" {
-		return def, nil
+var (
+	appConfigKeyOnce  sync.Once
+	appConfigKeyIndex map[string][]int
+)
+
+func getAppConfigKeyIndex() map[string][]int {
+	appConfigKeyOnce.Do(func() {
+		appConfigKeyIndex = make(map[string][]int)
+		t := reflect.TypeOf(AppConfig{})
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			key := strings.ToUpper(strings.TrimSpace(f.Tag.Get("config")))
+			if key == "" {
+				continue
+			}
+			appConfigKeyIndex[key] = f.Index
+		}
+	})
+	return appConfigKeyIndex
+}
+
+// AppConfigKeys 返回所有 AppConfig 白名单 key（来自结构体 tag），并按字母序排序。
+func AppConfigKeys() []string {
+	index := getAppConfigKeyIndex()
+	keys := make([]string, 0, len(index))
+	for k := range index {
+		keys = append(keys, k)
 	}
-	n, err := strconv.Atoi(val)
+	sort.Strings(keys)
+	return keys
+}
+
+func Load() Config {
+	cfg := Config{
+		RouterPort:           getInt("ROUTER_PORT", 3100),
+		AdminPort:            getInt("ADMIN_PORT", 3101),
+		DataDir:              getEnv("DATA_DIR", "./data"),
+		DatabasePath:         getEnv("DATABASE_PATH", "./data/app.db"),
+		WorkersDir:           getEnv("WORKERS_DIR", "./data/workers"),
+		WorkerRunningTempDir: getEnv("WORKER_RUNNING_TEMP_DIR", "./data/temp"),
+		ChatSessionsDir:      getEnv("CHAT_SESSIONS_DIR", "./data/chat-sessions"),
+		RuntimeLibDir:        getEnv("RUNTIME_LIB_DIR", "./data/.lib"),
+
+		MaxFileSize: 1 << 30, // 1GB
+
+		AdminToken: getEnv("ADMIN_TOKEN", "123123"),
+		LogLevel:   getEnv("LOG_LEVEL", "info"),
+	}
+
+	return cfg
+}
+
+func IsAppConfigKey(key string) bool {
+	key = strings.ToUpper(strings.TrimSpace(key))
+	_, ok := getAppConfigKeyIndex()[key]
+	return ok
+}
+
+// SetAppConfigValue 仅对 AppConfig 白名单 key 生效；非白名单 key 会被忽略。
+func (cfg *Config) SetAppConfigValue(key, value string) bool {
+	key = strings.ToUpper(strings.TrimSpace(key))
+	index, ok := getAppConfigKeyIndex()[key]
+	if !ok {
+		return false
+	}
+	v := reflect.ValueOf(&cfg.AppConfig).Elem()
+	f := v.FieldByIndex(index)
+	if !f.IsValid() || !f.CanSet() {
+		return false
+	}
+
+	switch f.Kind() {
+	case reflect.String:
+		f.SetString(value)
+		return true
+	case reflect.Bool:
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return false
+		}
+		f.SetBool(b)
+		return true
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		// 若未来 AppConfig 有时长字段，可在此扩展（例如识别 time.Duration）
+		i, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return false
+		}
+		f.SetInt(i)
+		return true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		u, err := strconv.ParseUint(value, 10, 64)
+		if err != nil {
+			return false
+		}
+		f.SetUint(u)
+		return true
+	case reflect.Float32, reflect.Float64:
+		fl, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return false
+		}
+		f.SetFloat(fl)
+		return true
+	default:
+		return false
+	}
+}
+
+// GetAppConfigValue 获取 AppConfig 白名单配置的当前值（用于展示/回显）。
+func (cfg *Config) GetAppConfigValue(key string) (string, bool) {
+	key = strings.ToUpper(strings.TrimSpace(key))
+	index, ok := getAppConfigKeyIndex()[key]
+	if !ok {
+		return "", false
+	}
+	v := reflect.ValueOf(cfg.AppConfig)
+	f := v.FieldByIndex(index)
+	if !f.IsValid() {
+		return "", false
+	}
+	switch f.Kind() {
+	case reflect.String:
+		return f.String(), true
+	case reflect.Bool:
+		return strconv.FormatBool(f.Bool()), true
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return strconv.FormatInt(f.Int(), 10), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return strconv.FormatUint(f.Uint(), 10), true
+	case reflect.Float32, reflect.Float64:
+		return strconv.FormatFloat(f.Float(), 'f', -1, 64), true
+	default:
+		return "", false
+	}
+}
+
+// Sync 用于在 Load() 之后同步 AppConfig。
+// 优先级：数据库 > env > 硬编码。
+func (cfg *Config) Sync(ctx context.Context, dao AppConfigDao) error {
+	cfg.AppConfig = AppConfig{
+		AI_BaseURL:          getEnv("AI_BASE_URL", "https://api.openai.com/v1"),
+		AI_APIKey:           getEnv("AI_API_KEY", ""),
+		AI_Model:            getEnv("AI_MODEL", "gpt-5"),
+		AI_MaxContextTokens: getInt("AI_MAX_CONTEXT_TOKENS", 16000),
+		AI_TimeoutMS:        getInt("AI_TIMEOUT_MS", 60000),
+	}
+	if dao == nil {
+		return nil
+	}
+	items, err := dao.GetConfigs(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("环境变量 %s 不是合法整数: %w", key, err)
+		return err
 	}
-	return n, nil
+	for k, v := range items {
+		if v == "" {
+			continue
+		}
+		cfg.SetAppConfigValue(k, v)
+	}
+	return nil
+}
+
+func getEnv(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func getInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			return i
+		}
+	}
+	return def
+}
+
+func getBool(key string, def bool) bool {
+	if v := os.Getenv(key); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
+		}
+	}
+	return def
 }

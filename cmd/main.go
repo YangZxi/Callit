@@ -23,20 +23,16 @@ import (
 )
 
 func main() {
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("加载配置失败: %v", err)
-	}
+	cfg := config.Load()
 
-	if err := ensureRuntimeDirs(cfg.DataDir); err != nil {
-		log.Fatalf("创建运行目录失败: %v", err)
-	}
-
-	store, err := db.Open(cfg.DBPath)
+	store, err := db.Open(cfg.DatabasePath)
 	if err != nil {
 		log.Fatalf("初始化数据库失败: %v", err)
 	}
 	defer store.Close()
+	if err := cfg.Sync(context.Background(), store.AppConfig); err != nil {
+		log.Fatalf("加载应用配置失败: %v", err)
+	}
 
 	reg := registry.New()
 	funcs, err := store.ListEnabledWorkers(context.Background())
@@ -46,7 +42,7 @@ func main() {
 	reg.Reload(funcs)
 
 	routerEngine := router.NewEngine(store, reg, cfg.DataDir)
-	adminEngine := admin.NewEngine(store, reg, cfg.DataDir, cfg.AdminToken, cfg.AI)
+	adminEngine := admin.NewEngine(store, reg, cfg)
 
 	routerSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.RouterPort),

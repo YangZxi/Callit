@@ -74,9 +74,8 @@ func TestShouldStripRawBody(t *testing.T) {
 
 func TestBuildFullURL(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/tea/123?x=1", nil)
-	got := req.URL.String()
+	got := buildFullURL(req)
 	want := "http://example.com/tea/123?x=1"
-	t.Logf("%s", got)
 	if got != want {
 		t.Fatalf("unexpected full url, got=%s want=%s", got, want)
 	}
@@ -87,7 +86,7 @@ func TestBuildFullURLForwardedHeaders(t *testing.T) {
 	req.Header.Set("X-Forwarded-Proto", "https")
 	req.Header.Set("X-Forwarded-Host", "api.example.com")
 
-	got := req.URL.String()
+	got := buildFullURL(req)
 	want := "https://api.example.com/tea/123?x=1"
 	if got != want {
 		t.Fatalf("unexpected full url with forwarded headers, got=%s want=%s", got, want)

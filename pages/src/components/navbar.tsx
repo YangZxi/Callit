@@ -2,7 +2,7 @@ import { Link as RouterLink, useLocation } from "react-router-dom";
 import { Navbar, NavbarBrand, NavbarContent, NavbarItem, Link, link as linkStyles } from "@heroui/react";
 import clsx from "clsx";
 
-import Login from "./login";
+// import Login from "./login";
 import { GithubIcon, Logo } from "@/components/icons";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { siteConfig } from "@/config/site";

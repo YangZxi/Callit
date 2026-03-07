@@ -36,15 +36,15 @@ type openAIClient struct {
 	client  *http.Client
 }
 
-func newOpenAIClient(cfg config.AIConfig) *openAIClient {
-	timeout := time.Duration(cfg.TimeoutMS) * time.Millisecond
+func newOpenAIClient(cfg config.AppConfig) *openAIClient {
+	timeout := time.Duration(cfg.AI_TimeoutMS) * time.Millisecond
 	if timeout <= 0 {
 		timeout = 120 * time.Second
 	}
 	return &openAIClient{
-		baseURL: strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
-		apiKey:  strings.TrimSpace(cfg.APIKey),
-		model:   strings.TrimSpace(cfg.Model),
+		baseURL: strings.TrimRight(strings.TrimSpace(cfg.AI_BaseURL), "/"),
+		apiKey:  strings.TrimSpace(cfg.AI_APIKey),
+		model:   strings.TrimSpace(cfg.AI_Model),
 		client: &http.Client{
 			Timeout: timeout,
 		},
