@@ -15,6 +15,8 @@ import (
 	"callit/internal/model"
 )
 
+const bridgeOutputSeparator = "\n**=====^=====**\n"
+
 // ExecuteResult 表示脚本执行结果。
 type ExecuteResult struct {
 	Status     int
@@ -23,6 +25,7 @@ type ExecuteResult struct {
 	Body       any
 	Stdout     string
 	Stderr     string
+	Result     string
 	DurationMS int64
 	TimedOut   bool
 	Err        error
@@ -53,7 +56,6 @@ func Run(parent context.Context, fn model.Worker, workerDir string, input model.
 	}
 
 	bridgeStdout, bridgeStderr, runErr := runWithHandlerBridge(parent, fn, workerDir, payload)
-	result.Stdout = bridgeStdout
 	result.Stderr = bridgeStderr
 
 	if errors.Is(parent.Err(), context.DeadlineExceeded) {
@@ -63,13 +65,23 @@ func Run(parent context.Context, fn model.Worker, workerDir string, input model.
 	}
 	if runErr != nil {
 		fmt.Printf("脚本执行失败: %s, %v", bridgeStderr, runErr)
+		result.Stdout = bridgeStdout
 		result.Err = fmt.Errorf("脚本执行失败: %w", runErr)
 		return
 	}
 
-	scriptOut, err := parseScriptOutput([]byte(result.Stdout))
+	logOutput, resultOutput, err := splitBridgeOutput(bridgeStdout)
 	if err != nil {
-		result.Err = fmt.Errorf("脚本 stdout 不是合法 JSON: %w", err)
+		result.Stdout = bridgeStdout
+		result.Err = fmt.Errorf("脚本 stdout 格式错误: %w", err)
+		return
+	}
+	result.Stdout = logOutput
+	result.Result = resultOutput
+
+	scriptOut, err := parseScriptOutput([]byte(resultOutput))
+	if err != nil {
+		result.Err = fmt.Errorf("脚本输出结果不是合法 JSON: %w", err)
 		return
 	}
 
@@ -107,6 +119,20 @@ func parseScriptOutput(raw []byte) (model.WorkerOutput, error) {
 		return model.WorkerOutput{}, err
 	}
 	return scriptOut, nil
+}
+
+func splitBridgeOutput(stdout string) (logOutput string, resultOutput string, err error) {
+	sepIdx := strings.LastIndex(stdout, bridgeOutputSeparator)
+	if sepIdx < 0 {
+		return "", "", fmt.Errorf("缺少结果分隔符")
+	}
+
+	logOutput = stdout[:sepIdx]
+	resultOutput = strings.TrimSpace(stdout[sepIdx+len(bridgeOutputSeparator):])
+	if resultOutput == "" {
+		return "", "", fmt.Errorf("分隔符后结果为空")
+	}
+	return logOutput, resultOutput, nil
 }
 
 func runWithHandlerBridge(parent context.Context, fn model.Worker, functionDir string, payload []byte) (stdout string, stderr string, err error) {

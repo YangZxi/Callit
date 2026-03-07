@@ -10,6 +10,7 @@ type WorkerLog struct {
 	Status     int       `json:"status"`
 	Stdout     string    `json:"stdout"`
 	Stderr     string    `json:"stderr"`
+	Result     string    `json:"result"`
 	Error      string    `json:"error"`
 	DurationMS int64     `json:"duration_ms"`
 	CreatedAt  time.Time `json:"created_at"`

@@ -1,6 +1,7 @@
 const fs = require("fs");
 const vm = require("vm");
 const path = require("path");
+const RESULT_SEPARATOR = "\n**=====^=====**\n";
 
 const raw = fs.readFileSync(0, "utf8");
 const ctx = raw ? JSON.parse(raw) : {};
@@ -35,6 +36,7 @@ if (typeof handler !== "function") {
 }
 
 Promise.resolve(handler(ctx)).then((out) => {
+	process.stdout.write(RESULT_SEPARATOR);
 	process.stdout.write(JSON.stringify(out));
 }).catch((err) => {
 	console.error(err && err.stack ? err.stack : String(err));

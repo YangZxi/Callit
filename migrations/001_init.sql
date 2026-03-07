@@ -17,6 +17,7 @@ CREATE TABLE execution_logs (
     status INTEGER,
     stdout TEXT,
     stderr TEXT,
+    result TEXT,
     error TEXT,
     duration_ms INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP

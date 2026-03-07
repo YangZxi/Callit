@@ -39,6 +39,10 @@ func Open(dbPath string) (*Store, error) {
 		database.Close()
 		return nil, fmt.Errorf("执行迁移失败: %w", err)
 	}
+	if err = ensureExecutionLogsResultColumn(database); err != nil {
+		database.Close()
+		return nil, fmt.Errorf("升级 execution_logs.result 列失败: %w", err)
+	}
 	store := &Store{db: database}
 	store.AppConfig = &AppConfigDao{store: database}
 	return store, nil
@@ -196,14 +200,15 @@ func (s *Store) SetWorkerEnabled(ctx context.Context, id string, enabled bool) (
 // InsertWorkerLog 写入函数执行日志。
 func (s *Store) InsertWorkerLog(ctx context.Context, log model.WorkerLog) error {
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO execution_logs(id, worker_id, request_id, status, stdout, stderr, error, duration_ms)
-VALUES(?,?,?,?,?,?,?,?)`,
+INSERT INTO execution_logs(id, worker_id, request_id, status, stdout, stderr, result, error, duration_ms)
+VALUES(?,?,?,?,?,?,?,?,?)`,
 		log.ID,
 		log.WorkerID,
 		log.RequestID,
 		log.Status,
 		log.Stdout,
 		log.Stderr,
+		log.Result,
 		log.Error,
 		log.DurationMS,
 	)
@@ -229,7 +234,7 @@ WHERE worker_id = ?`, workerID).Scan(&total); err != nil {
 
 	offset := (page - 1) * pageSize
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, worker_id, request_id, status, stdout, stderr, error, duration_ms, created_at
+SELECT id, worker_id, request_id, status, stdout, stderr, result, error, duration_ms, created_at
 FROM execution_logs
 WHERE worker_id = ?
 ORDER BY created_at DESC, id DESC
@@ -241,6 +246,7 @@ LIMIT ? OFFSET ?`, workerID, pageSize, offset)
 
 	result := make([]model.WorkerLog, 0, pageSize)
 	for rows.Next() {
+		var resultText sql.NullString
 		var item model.WorkerLog
 		if err := rows.Scan(
 			&item.ID,
@@ -249,11 +255,17 @@ LIMIT ? OFFSET ?`, workerID, pageSize, offset)
 			&item.Status,
 			&item.Stdout,
 			&item.Stderr,
+			&resultText,
 			&item.Error,
 			&item.DurationMS,
 			&item.CreatedAt,
 		); err != nil {
 			return nil, 0, err
+		}
+		if resultText.Valid {
+			item.Result = resultText.String
+		} else {
+			item.Result = ""
 		}
 		result = append(result, item)
 	}
@@ -296,4 +308,35 @@ func boolToInt(v bool) int {
 		return 1
 	}
 	return 0
+}
+
+func ensureExecutionLogsResultColumn(database *sql.DB) error {
+	rows, err := database.Query(`PRAGMA table_info(execution_logs)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var (
+		cid       int
+		name      string
+		colType   string
+		notNull   int
+		defaultV  sql.NullString
+		primaryID int
+	)
+	for rows.Next() {
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultV, &primaryID); err != nil {
+			return err
+		}
+		if name == "result" {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	_, err = database.Exec(`ALTER TABLE execution_logs ADD COLUMN result TEXT`)
+	return err
 }

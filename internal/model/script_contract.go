@@ -40,12 +40,12 @@ type WorkerRequest struct {
 
 // WorkerOutput 是脚本 stdout 结构化响应。
 type WorkerOutput struct {
-	// Status 是 Worker 希望返回的 HTTP 状态码，默认 200。
+	// Status Worker 希望返回的 HTTP 状态码，默认 200。
 	Status *int `json:"status,omitempty"`
-	// Headers 是 Worker 希望附加的响应头。
+	// Headers Worker 希望附加的响应头。
 	Headers map[string]string `json:"headers,omitempty"`
-	// File 是 Worker 目录下的相对文件路径，用于返回文件内容。
+	// File Worker 目录下的相对文件路径，用于返回文件内容。
 	File string `json:"file,omitempty"`
-	// Body 是业务响应体，可为对象、数组或字符串。
+	// Body 业务响应体，可为对象、数组或字符串。
 	Body any `json:"body"`
 }

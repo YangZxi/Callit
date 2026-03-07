@@ -1,6 +1,8 @@
 import json
 import importlib.util
-import sys  
+import sys
+
+SEPARATOR = "\n**=====^=====**\n"
 
 raw = sys.stdin.read()
 ctx = json.loads(raw) if raw else {}
@@ -14,4 +16,6 @@ if not callable(handler):
 	raise RuntimeError("main.py 必须定义 handler(ctx)")
 
 out = handler(ctx)
-print(json.dumps(out, ensure_ascii=False))
+sys.stdout.write(SEPARATOR)
+sys.stdout.write(json.dumps(out, ensure_ascii=False))
+sys.stdout.flush()

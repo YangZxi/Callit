@@ -369,6 +369,7 @@ func (s *Server) recordRunningLog(workerID string, requestID string, execResult 
 		Status:     statusForLog,
 		Stdout:     execResult.Stdout,
 		Stderr:     execResult.Stderr,
+		Result:     execResult.Result,
 		Error:      errMsg,
 		DurationMS: execResult.DurationMS,
 	})

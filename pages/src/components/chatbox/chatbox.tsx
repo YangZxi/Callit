@@ -6,6 +6,7 @@ import { Avatar, Badge, addToast } from "@heroui/react";
 import api from "@/lib/api";
 
 import PromptContainerWithConversation from "./prompt-container-with-conversation";
+import { OpenAIIcon } from "../icons";
 
 export type ChatMode = "chat" | "agent";
 
@@ -269,8 +270,10 @@ export default function Chatbox({ workerId, onFilesChanged }: ChatboxProps) {
         className="rounded-xl transition-transform hover:scale-105"
         onClick={() => setChatOpen((prev) => !prev)}
       >
-        <Badge color="warning" content={messages.length > 0 ? String(messages.length) : undefined} variant="solid">
-          <Avatar radius="md" src="https://i.pravatar.cc/150?u=a042f81f4e29026024d" />
+        <Badge color="secondary" content={messages.length > 0 ? String(messages.length) : 0} variant="solid">
+          <Avatar radius="md" 
+            icon={<OpenAIIcon />}
+          />
         </Badge>
       </button>
     </div>
