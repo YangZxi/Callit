@@ -232,9 +232,9 @@ export default function WorkerDetailPage() {
     }
   }, [selectedFile, saving, isDiffMode, fileMediaType, id, content, loadFiles]);
 
-  const applyDiffMerge = useCallback(async () => {
-    if (!activeDiffFile || !selectedFile || saving || fileBusy) return;
-    const ok = window.confirm(`将 ${activeDiffFile} 的内容合并回 ${selectedFile} 并删除 diff 文件，确认继续？`);
+	const applyDiffMerge = useCallback(async () => {
+		if (!activeDiffFile || !selectedFile || saving || fileBusy) return;
+		const ok = window.confirm(`将 ${activeDiffFile} 的内容合并回 ${selectedFile} 并删除 diff 文件，确认继续？`);
     if (!ok) return;
 
     setSaving(true);
@@ -249,7 +249,23 @@ export default function WorkerDetailPage() {
     } finally {
       setSaving(false);
     }
-  }, [activeDiffFile, selectedFile, saving, fileBusy, id, content, loadFiles, loadFileContent]);
+	}, [activeDiffFile, selectedFile, saving, fileBusy, id, content, loadFiles, loadFileContent]);
+
+	const cancelDiffMerge = useCallback(async () => {
+		if (!activeDiffFile || fileBusy) return;
+		setFileBusy(true);
+		try {
+			const diffTarget = encodeURIComponent(activeDiffFile);
+			await api.delete<{ ok: boolean }>(`/workers/${id}/files?filename=${diffTarget}`);
+			addToast({ title: "已取消 Diff 合并", color: "warning", variant: "flat", timeout: 1800 });
+			await loadFiles(selectedFile || undefined);
+			if (selectedFile) {
+				await loadFileContent(selectedFile);
+			}
+		} finally {
+			setFileBusy(false);
+		}
+	}, [activeDiffFile, fileBusy, id, loadFiles, loadFileContent, selectedFile]);
 
   useEffect(() => {
     saveCurrentFileRef.current = isDiffMode ? applyDiffMerge : saveCurrentFile;
@@ -482,17 +498,28 @@ export default function WorkerDetailPage() {
                 ) : null}
               </div>
               <div className="flex items-center gap-2">
-                {isDiffMode ? (
-                  <Button
-                    color="warning"
-                    size="sm"
-                    variant="flat"
-                    isDisabled={saving || fileBusy}
-                    onPress={applyDiffMerge}
-                  >
-                    应用并清理 diff
-                  </Button>
-                ) : null}
+				{isDiffMode ? (
+					<>
+						<Button
+							color="warning"
+							size="sm"
+							variant="flat"
+							isDisabled={saving || fileBusy}
+							onPress={applyDiffMerge}
+						>
+							应用 Diff
+						</Button>
+						<Button
+							color="default"
+							size="sm"
+							variant="flat"
+							isDisabled={saving || fileBusy}
+							onPress={cancelDiffMerge}
+						>
+							取消 Diff
+						</Button>
+					</>
+				) : null}
                 <EditorPanelAction
                   loading={saving}
                   disabled={!selectedFile || fileBusy}

@@ -48,30 +48,32 @@ export default function WorkerLogList({
   items,
   expandedIds,
   page,
-  pageSize,
-  total,
   totalPages,
   onToggle,
   onPageChange,
 }: WorkerLogListProps) {
   return (
-    <div className="flex max-h-[60vh] flex-col gap-2 overflow-auto pr-1">
-      {loading ? (
-        <p className="text-sm text-default-500">正在加载运行日志...</p>
-      ) : null}
-      {!loading && items.length === 0 ? (
-        <div className="rounded-lg border border-default-200 px-3 py-4 text-sm text-default-500">
-          暂无运行日志
-        </div>
-      ) : null}
-      {!loading && items.length > 0 ? (
-        <>
-          {items.map((item) => {
+    <div className="flex max-h-[60vh] flex-col gap-2 pr-1 relative">
+
+      <div className="w-full flex justify-end">
+        <Pagination showControls color="success" page={page} total={totalPages} onChange={onPageChange} />
+      </div>
+      <div className="overflow-auto h-[500px]">
+        {loading ? (
+          <p className="text-sm text-default-500">正在加载运行日志...</p>
+        ) : null}
+        {!loading && items.length === 0 ? (
+          <div className="rounded-lg border border-default-200 px-3 py-4 text-sm text-default-500">
+            暂无运行日志
+          </div>
+        ) : null}
+        {!loading && items.length > 0 ? (
+          items.map((item) => {
             const expanded = expandedIds.has(item.id);
             const formattedResult = formatResultForDisplay(item.result);
             return (
               <div key={item.id} className="rounded-lg border border-default-200 p-3">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start justify-between gap-3" onClick={() => onToggle(item.id)}>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-default-800">request_id: {item.request_id}</p>
                     <p className="truncate text-xs text-default-500">
@@ -115,14 +117,9 @@ export default function WorkerLogList({
                 ) : null}
               </div>
             );
-          })}
-        </>
-      ) : null}
-      {total > pageSize ? (
-        <div className="flex items-center justify-end pt-1">
-          <Pagination showControls color="success" page={page} total={totalPages} onChange={onPageChange} />
-        </div>
-      ) : null}
+          })
+        ) : null}
+      </div>
     </div>
   );
 }
