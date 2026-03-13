@@ -84,7 +84,7 @@ func (s *Server) handleInvoke(c *gin.Context) {
 	input := model.WorkerInput{
 		Request: model.WorkerRequest{
 			Method:  method,
-			URI:     buildRouteSuffix(fn.Route, c.Request.URL.RequestURI()),
+			URI:     buildRouteSuffix(fn.Route, c.Request.URL.Path),
 			URL:     buildFullURL(c.Request),
 			Params:  buildQueryParams(c.Request.URL),
 			Headers: headers,
@@ -301,6 +301,10 @@ func getWorkerFilePath(workerDir string, rawPath string) (string, error) {
 }
 
 func buildRouteSuffix(route string, requestPath string) string {
+	if parsed, err := url.Parse(requestPath); err == nil && parsed.Path != "" {
+		requestPath = parsed.Path
+	}
+
 	if strings.HasSuffix(route, "/*") {
 		prefix := strings.TrimSuffix(route, "*")
 		if strings.HasPrefix(requestPath, prefix) {

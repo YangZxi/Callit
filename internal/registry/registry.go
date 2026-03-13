@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -26,6 +27,24 @@ type wildcardRoute struct {
 	worker model.Worker
 }
 
+func normalizeRoutePath(route string) string {
+	if parsed, err := url.Parse(route); err == nil && parsed.Path != "" {
+		route = parsed.Path
+	} else if index := strings.Index(route, "?"); index >= 0 {
+		route = route[:index]
+	}
+
+	if route == "" || route == "/" {
+		return "/"
+	}
+
+	normalized := strings.TrimRight(route, "/")
+	if normalized == "" {
+		return "/"
+	}
+	return normalized
+}
+
 // New 创建空注册表。
 func New() *Registry {
 	return &Registry{
@@ -43,11 +62,11 @@ func (r *Registry) Reload(functions []model.Worker) {
 		}
 
 		target := nextExact
-		routeKey := fn.Route
+		routeKey := normalizeRoutePath(fn.Route)
 		if strings.HasSuffix(fn.Route, "/*") {
 			target = nextWildcard
-			// 只保留前缀部分，示例: /tea/* => /tea/
-			routeKey = strings.TrimSuffix(fn.Route, "*")
+			// 只保留前缀部分，示例: /tea/* => /tea
+			routeKey = normalizeRoutePath(strings.TrimSuffix(fn.Route, "/*"))
 		}
 		target[routeKey] = fn
 	}
@@ -75,15 +94,16 @@ func (r *Registry) Match(route string) RouterInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	if fn, ok := r.exactRoutes[route]; ok {
+	normalizedRoute := normalizeRoutePath(route)
+
+	if fn, ok := r.exactRoutes[normalizedRoute]; ok {
 		return RouterInfo{Worker: fn, Found: true}
 	}
 
 	for _, item := range r.wildcardRoutes {
-		if !strings.HasPrefix(route, item.prefix) {
-			continue
+		if normalizedRoute == item.prefix || strings.HasPrefix(normalizedRoute, item.prefix+"/") {
+			return RouterInfo{Worker: item.worker, Found: true}
 		}
-		return RouterInfo{Worker: item.worker, Found: true}
 	}
 
 	return RouterInfo{Found: false}

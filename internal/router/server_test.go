@@ -92,3 +92,66 @@ func TestBuildFullURLForwardedHeaders(t *testing.T) {
 		t.Fatalf("unexpected full url with forwarded headers, got=%s want=%s", got, want)
 	}
 }
+
+func TestBuildRouteSuffix(t *testing.T) {
+	tests := []struct {
+		name        string
+		route       string
+		requestPath string
+		want        string
+	}{
+		{
+			name:        "基础路径无斜杠",
+			route:       "/tea/*",
+			requestPath: "/tea",
+			want:        "/",
+		},
+		{
+			name:        "基础路径带斜杠",
+			route:       "/tea/*",
+			requestPath: "/tea/",
+			want:        "/",
+		},
+		{
+			name:        "子路径",
+			route:       "/tea/*",
+			requestPath: "/tea/a",
+			want:        "/a",
+		},
+		{
+			name:        "基础路径带查询串",
+			route:       "/tea/*",
+			requestPath: "/tea/?token=1",
+			want:        "/",
+		},
+		{
+			name:        "子路径带查询串",
+			route:       "/tea/*",
+			requestPath: "/tea/a?token=1",
+			want:        "/a",
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildRouteSuffix(tc.route, tc.requestPath)
+			if got != tc.want {
+				t.Fatalf("unexpected route suffix, got=%q want=%q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRequestPathDoesNotIncludeQuery(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/tea?token=1", nil)
+	if req.URL.Path != "/tea" {
+		t.Fatalf("unexpected request path, got=%q want=%q", req.URL.Path, "/tea")
+	}
+
+	params := buildQueryParams(req.URL)
+	want := map[string]string{"token": "1"}
+	if !reflect.DeepEqual(params, want) {
+		t.Fatalf("unexpected query params, got=%v want=%v", params, want)
+	}
+}
