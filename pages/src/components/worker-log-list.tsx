@@ -5,6 +5,7 @@ export type WorkerLogItem = {
   worker_id: string;
   request_id: string;
   status: number;
+  stdin: string;
   stdout: string;
   stderr: string;
   result: string;
@@ -71,6 +72,7 @@ export default function WorkerLogList({
           items.map((item) => {
             const expanded = expandedIds.has(item.id);
             const formattedResult = formatResultForDisplay(item.result);
+            const formattedStdin = formatResultForDisplay(item.stdin);
             return (
               <div key={item.id} className="rounded-lg border border-default-200 p-3">
                 <div className="flex items-start justify-between gap-3" onClick={() => onToggle(item.id)}>
@@ -98,19 +100,25 @@ export default function WorkerLogList({
                         <pre className="max-h-40 overflow-auto rounded-md bg-warning-50 p-2 font-mono text-xs whitespace-pre-wrap break-words text-warning-700">{item.stderr}</pre>
                       </div>
                     ) : null}
-                    {item.stdout ? (
-                      <div>
-                        <p className="mb-1 text-xs font-medium text-success">stdout</p>
-                        <pre className="max-h-40 overflow-auto rounded-md bg-success-50 p-2 font-mono text-xs whitespace-pre-wrap break-words text-success-700">{item.stdout}</pre>
-                      </div>
-                    ) : null}
                     {item.result ? (
                       <div>
                         <p className="mb-1 text-xs font-medium text-primary">result</p>
                         <pre className="max-h-40 overflow-auto rounded-md bg-primary-50 p-2 font-mono text-xs whitespace-pre-wrap break-words text-primary-700">{formattedResult}</pre>
                       </div>
                     ) : null}
-                    {!item.error && !item.stderr && !item.stdout && !item.result ? (
+                    {item.stdin ? (
+                      <div>
+                        <p className="mb-1 text-xs font-medium text-secondary">stdin</p>
+                        <pre className="max-h-40 overflow-auto rounded-md bg-secondary-50 p-2 font-mono text-xs whitespace-pre-wrap break-words text-secondary-700">{formattedStdin}</pre>
+                      </div>
+                    ) : null}
+                    {item.stdout ? (
+                      <div>
+                        <p className="mb-1 text-xs font-medium text-default-700">stdout</p>
+                        <pre className="max-h-40 overflow-auto rounded-md bg-default-100 p-2 font-mono text-xs whitespace-pre-wrap break-words text-default-800">{item.stdout}</pre>
+                      </div>
+                    ) : null}
+                    {!item.error && !item.stderr && !item.result && !item.stdin && !item.stdout ? (
                       <p className="text-xs text-default-400">无详细输出</p>
                     ) : null}
                   </div>

@@ -8,6 +8,7 @@ type WorkerLog struct {
 	WorkerID   string    `json:"worker_id"`
 	RequestID  string    `json:"request_id"`
 	Status     int       `json:"status"`
+	Stdin      string    `json:"stdin"`
 	Stdout     string    `json:"stdout"`
 	Stderr     string    `json:"stderr"`
 	Result     string    `json:"result"`

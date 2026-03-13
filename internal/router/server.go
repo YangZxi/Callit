@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
@@ -104,7 +105,7 @@ func (s *Server) handleInvoke(c *gin.Context) {
 
 	workerDir := filepath.Join(s.dataDir, "workers", fn.ID)
 	execResult := executor.Run(timeoutCtx, fn, workerDir, input)
-	s.recordRunningLog(fn.ID, requestID, execResult)
+	s.recordRunningLog(fn.ID, requestID, input, execResult)
 
 	if execResult.TimedOut {
 		common.ErrorResponse(c, http.StatusGatewayTimeout, "execution timeout")
@@ -347,7 +348,7 @@ func (s *Server) insertWorkerLogAsync(entry model.WorkerLog) {
 }
 
 // recordRunningLog 统一整理执行结果并异步记录 Worker 运行日志。
-func (s *Server) recordRunningLog(workerID string, requestID string, execResult executor.ExecuteResult) {
+func (s *Server) recordRunningLog(workerID string, requestID string, input model.WorkerInput, execResult executor.ExecuteResult) {
 	statusForLog := execResult.Status
 	if statusForLog == 0 {
 		if execResult.TimedOut {
@@ -366,11 +367,20 @@ func (s *Server) recordRunningLog(workerID string, requestID string, execResult 
 		}
 	}
 
+	stdinText := ""
+	payload, err := json.Marshal(input)
+	if err != nil {
+		log.Printf("序列化 WorkerInput 失败: %v", err)
+	} else {
+		stdinText = string(payload)
+	}
+
 	s.insertWorkerLogAsync(model.WorkerLog{
 		ID:         uuid.NewString(),
 		WorkerID:   workerID,
 		RequestID:  requestID,
 		Status:     statusForLog,
+		Stdin:      stdinText,
 		Stdout:     execResult.Stdout,
 		Stderr:     execResult.Stderr,
 		Result:     execResult.Result,

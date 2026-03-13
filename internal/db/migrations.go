@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS execution_logs (
     worker_id TEXT NOT NULL,
     request_id TEXT NOT NULL,
     status INTEGER,
+    stdin TEXT,
     stdout TEXT,
     stderr TEXT,
     result TEXT,

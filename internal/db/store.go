@@ -39,9 +39,13 @@ func Open(dbPath string) (*Store, error) {
 		database.Close()
 		return nil, fmt.Errorf("执行迁移失败: %w", err)
 	}
-	if err = ensureExecutionLogsResultColumn(database); err != nil {
+	if err = ensureExecutionLogsColumn(database, "result"); err != nil {
 		database.Close()
 		return nil, fmt.Errorf("升级 execution_logs.result 列失败: %w", err)
+	}
+	if err = ensureExecutionLogsColumn(database, "stdin"); err != nil {
+		database.Close()
+		return nil, fmt.Errorf("升级 execution_logs.stdin 列失败: %w", err)
 	}
 	store := &Store{db: database}
 	store.AppConfig = &AppConfigDao{store: database}
@@ -200,12 +204,13 @@ func (s *Store) SetWorkerEnabled(ctx context.Context, id string, enabled bool) (
 // InsertWorkerLog 写入函数执行日志。
 func (s *Store) InsertWorkerLog(ctx context.Context, log model.WorkerLog) error {
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO execution_logs(id, worker_id, request_id, status, stdout, stderr, result, error, duration_ms)
-VALUES(?,?,?,?,?,?,?,?,?)`,
+INSERT INTO execution_logs(id, worker_id, request_id, status, stdin, stdout, stderr, result, error, duration_ms)
+VALUES(?,?,?,?,?,?,?,?,?,?)`,
 		log.ID,
 		log.WorkerID,
 		log.RequestID,
 		log.Status,
+		log.Stdin,
 		log.Stdout,
 		log.Stderr,
 		log.Result,
@@ -234,7 +239,7 @@ WHERE worker_id = ?`, workerID).Scan(&total); err != nil {
 
 	offset := (page - 1) * pageSize
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, worker_id, request_id, status, stdout, stderr, result, error, duration_ms, created_at
+SELECT id, worker_id, request_id, status, stdin, stdout, stderr, result, error, duration_ms, created_at
 FROM execution_logs
 WHERE worker_id = ?
 ORDER BY created_at DESC, id DESC
@@ -246,6 +251,7 @@ LIMIT ? OFFSET ?`, workerID, pageSize, offset)
 
 	result := make([]model.WorkerLog, 0, pageSize)
 	for rows.Next() {
+		var stdinText sql.NullString
 		var resultText sql.NullString
 		var item model.WorkerLog
 		if err := rows.Scan(
@@ -253,6 +259,7 @@ LIMIT ? OFFSET ?`, workerID, pageSize, offset)
 			&item.WorkerID,
 			&item.RequestID,
 			&item.Status,
+			&stdinText,
 			&item.Stdout,
 			&item.Stderr,
 			&resultText,
@@ -261,6 +268,11 @@ LIMIT ? OFFSET ?`, workerID, pageSize, offset)
 			&item.CreatedAt,
 		); err != nil {
 			return nil, 0, err
+		}
+		if stdinText.Valid {
+			item.Stdin = stdinText.String
+		} else {
+			item.Stdin = ""
 		}
 		if resultText.Valid {
 			item.Result = resultText.String
@@ -310,7 +322,7 @@ func boolToInt(v bool) int {
 	return 0
 }
 
-func ensureExecutionLogsResultColumn(database *sql.DB) error {
+func ensureExecutionLogsColumn(database *sql.DB, columnName string) error {
 	rows, err := database.Query(`PRAGMA table_info(execution_logs)`)
 	if err != nil {
 		return err
@@ -329,7 +341,7 @@ func ensureExecutionLogsResultColumn(database *sql.DB) error {
 		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultV, &primaryID); err != nil {
 			return err
 		}
-		if name == "result" {
+		if name == columnName {
 			return nil
 		}
 	}
@@ -337,6 +349,6 @@ func ensureExecutionLogsResultColumn(database *sql.DB) error {
 		return err
 	}
 
-	_, err = database.Exec(`ALTER TABLE execution_logs ADD COLUMN result TEXT`)
+	_, err = database.Exec(fmt.Sprintf(`ALTER TABLE execution_logs ADD COLUMN %s TEXT`, columnName))
 	return err
 }
