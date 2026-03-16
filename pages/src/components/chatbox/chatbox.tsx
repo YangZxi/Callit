@@ -1,9 +1,7 @@
-"use client";
-
 import React from "react";
 import { Avatar, Badge, addToast } from "@heroui/react";
 
-import api from "@/lib/api";
+import api, { API_BASE } from "@/lib/api";
 
 import PromptContainerWithConversation from "./prompt-container-with-conversation";
 import { OpenAIIcon } from "../icons";
@@ -39,7 +37,7 @@ async function streamChat(
   payload: { mode: ChatMode; message: string; history_limit: number },
   onEvent: (event: SSEEvent) => void,
 ) {
-  const res = await fetch(`/api/workers/${workerId}/chat/stream`, {
+  const res = await fetch(`${API_BASE}/workers/${workerId}/chat/stream`, {
     method: "POST",
     credentials: "include",
     headers: {

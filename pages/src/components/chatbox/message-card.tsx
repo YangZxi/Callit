@@ -1,5 +1,3 @@
-"use client";
-
 import React from "react";
 import {Avatar, Badge, Button, Link, Tooltip} from "@heroui/react";
 import {useClipboard} from "@heroui/use-clipboard";

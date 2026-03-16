@@ -1,5 +1,3 @@
-"use client";
-
 import React from "react";
 
 let markedLoader: Promise<{marked: {parse: (source: string) => string}}> | null = null;

@@ -1,5 +1,3 @@
-"use client";
-
 import type {TextAreaProps} from "@heroui/react";
 
 import React from "react";

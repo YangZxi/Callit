@@ -1,6 +1,3 @@
-"use client";
-
-import React from "react";
 import { Button, ScrollShadow, Tab, Tabs } from "@heroui/react";
 import { cn } from "@heroui/react";
 
