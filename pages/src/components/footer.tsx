@@ -20,7 +20,7 @@ function Footer() {
       >
         <span className="text-default-600">Powered by</span>
         <span className="text-primary font-bold ml-1">
-          callit
+          Callit
         </span>
       </a>
       <p className="hidden md:block text-sm">

@@ -3,6 +3,7 @@ services:
     image: yangzxi/callit:latest
     container_name: callit
     environment:
+      # - ADMIN_PREFIX=admin1234   # 默认值 admin
       - ADMIN_TOKEN=   # 在生产环境中请设置一个强随机值
       - AI_BASE_URL=https://openrouter.ai/api/v1/chat/completions
       - AI_API_KEY=
