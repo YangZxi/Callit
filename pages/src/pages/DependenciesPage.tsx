@@ -12,7 +12,7 @@ import {
 	addToast,
 } from "@heroui/react";
 
-import api from "@/lib/api";
+import api, { API_BASE } from "@/lib/api";
 
 type RuntimeType = "node" | "python";
 type ManageAction = "install" | "remove";
@@ -31,7 +31,7 @@ async function streamDependencyManage(
 	payload: { runtime: RuntimeType; action: ManageAction; package: string },
 	onEvent: (event: SSEEvent) => void,
 ) {
-	const res = await fetch("/api/dependencies/manage", {
+	const res = await fetch(`${API_BASE}/dependencies/manage`, {
 		method: "POST",
 		credentials: "include",
 		headers: {

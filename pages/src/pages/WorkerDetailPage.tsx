@@ -1,7 +1,8 @@
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Chip, Listbox, ListboxItem, addToast } from "@heroui/react";
-import Editor, { DiffEditor, OnMount } from "@monaco-editor/react";
+import Editor, { DiffEditor, MonacoDiffEditor, OnMount } from "@monaco-editor/react";
 import { useNavigate, useParams } from "react-router-dom";
+import type { IDisposable } from "monaco-editor";
 
 import api from "@/lib/api";
 import Chatbox from "@/components/chatbox/chatbox";
@@ -66,6 +67,7 @@ export default function WorkerDetailPage() {
   const { isDark } = useTheme();
   const uploadRef = useRef<HTMLInputElement | null>(null);
   const saveCurrentFileRef = useRef<(() => Promise<void>) | null>(null);
+  const diffEditorChangeRef = useRef<IDisposable | null>(null);
 
   const [workerInfo, setWorkerInfo] = useState<WorkerItem | null>(null);
   const [files, setFiles] = useState<string[]>([]);
@@ -277,12 +279,23 @@ export default function WorkerDetailPage() {
     });
   };
 
-  const handleDiffEditorMount = (editor: any, monaco: any) => {
+  const handleDiffEditorMount = (editor: MonacoDiffEditor, monaco: Parameters<OnMount>[1]) => {
     const modifiedEditor = editor.getModifiedEditor();
+    diffEditorChangeRef.current?.dispose();
+    diffEditorChangeRef.current = modifiedEditor.onDidChangeModelContent(() => {
+      setContent(modifiedEditor.getValue());
+    });
     modifiedEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       void saveCurrentFileRef.current?.();
     });
   };
+
+  useEffect(() => {
+    return () => {
+      diffEditorChangeRef.current?.dispose();
+      diffEditorChangeRef.current = null;
+    };
+  }, []);
 
   const createFile = async () => {
     const filename = window.prompt("输入新文件名（例如 helper.py）", "");
@@ -426,7 +439,7 @@ export default function WorkerDetailPage() {
             <div className="flex items-center gap-2">
               <Button color="default" size="sm" variant="flat"
                 isIconOnly
-                onPress={() => navigate("/workers")}
+                onPress={() => navigate(`${window.__BASE_PREFIX__}/workers`)}
               >
                 <Icon icon="material-symbols:arrow-back-ios-new-rounded" width="24" height="30" />
               </Button>
@@ -557,7 +570,6 @@ export default function WorkerDetailPage() {
                       scrollBeyondLastLine: false,
                       renderSideBySide: true,
                     }}
-                    onChange={(value: string | undefined) => setContent(value ?? "")}
                   />
                 ) : (
                   <Editor

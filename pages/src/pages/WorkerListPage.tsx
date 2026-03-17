@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from "react";
 import { Button, Chip, Input, Select, SelectItem, Switch, addToast } from "@heroui/react";
 import { useNavigate } from "react-router-dom";
 
@@ -171,6 +171,14 @@ export default function WorkerListPage() {
     void submitForm();
   };
 
+  const onCardKeyDown = (event: KeyboardEvent<HTMLDivElement>, workerID: string) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    navigate(`/workers/${workerID}`);
+  };
+
   return (
     <section className="py-2 md:py-6 pb-4 md:pb-2">
       <div className="flex items-center justify-between gap-3">
@@ -187,11 +195,13 @@ export default function WorkerListPage() {
 		  <div className="rounded-xl border border-default-200 p-5 text-sm text-default-500">暂无 Worker，点击右上角新增。</div>
         )}
         {!listLoading && workers.map((item) => (
-          <button
+          <div
             key={item.id}
             className="w-full rounded-xl border border-default-200 p-4 text-left hover:border-primary transition-colors"
-            type="button"
-            onClick={() => navigate(`/workers/${item.id}`)}
+            role="button"
+            tabIndex={0}
+            onClick={() => navigate(`${window.__BASE_PREFIX__}/workers/${item.id}`)}
+            onKeyDown={(event) => onCardKeyDown(event, item.id)}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex flex-col gap-2">
@@ -247,7 +257,7 @@ export default function WorkerListPage() {
                 </Button>
               </div>
             </div>
-          </button>
+          </div>
         ))}
       </div>
 

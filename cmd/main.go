@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -24,6 +25,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := ensureRuntimeDirs(cfg.DataDir); err != nil {
+		log.Fatalf("初始化运行目录失败: %v", err)
+	}
 
 	store, err := db.Open(cfg.DatabasePath)
 	if err != nil {
@@ -43,32 +47,22 @@ func main() {
 
 	routerEngine := router.NewEngine(store, reg, cfg.DataDir)
 	adminEngine := admin.NewEngine(store, reg, cfg)
+	handler := serverRouteHandler(adminEngine, routerEngine, cfg.AdminPrefix)
 
-	routerSrv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.RouterPort),
-		Handler:           routerEngine,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-	adminSrv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.AdminPort),
-		Handler:           adminEngine,
+	srv := &http.Server{
+		Addr:              fmt.Sprintf(":%d", cfg.ServerPort),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	localIP := resolveLocalIPv4()
-	log.Printf("Router 服务启动: http://%s:%d", localIP, cfg.RouterPort)
-	log.Printf("Admin 服务启动: http://%s:%d", localIP, cfg.AdminPort)
+	log.Printf("服务启动: http://%s:%d", localIP, cfg.ServerPort)
+	log.Printf("Admin 服务入口: http://%s:%d%s", localIP, cfg.ServerPort, cfg.AdminPrefix)
 
 	group, gctx := errgroup.WithContext(context.Background())
 	group.Go(func() error {
-		if err := routerSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("router 服务异常: %w", err)
-		}
-		return nil
-	})
-	group.Go(func() error {
-		if err := adminSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("admin 服务异常: %w", err)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("服务异常: %w", err)
 		}
 		return nil
 	})
@@ -86,11 +80,8 @@ func main() {
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := routerSrv.Shutdown(shutdownCtx); err != nil {
-			return fmt.Errorf("关闭 router 失败: %w", err)
-		}
-		if err := adminSrv.Shutdown(shutdownCtx); err != nil {
-			return fmt.Errorf("关闭 admin 失败: %w", err)
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("关闭服务失败: %w", err)
 		}
 		return nil
 	})
@@ -133,4 +124,19 @@ func resolveLocalIPv4() string {
 		return ip4.String()
 	}
 	return "127.0.0.1"
+}
+
+func serverRouteHandler(adminHandler http.Handler, routerHandler http.Handler, adminPrefix string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isAdminPath(r.URL.Path, adminPrefix) {
+			adminHandler.ServeHTTP(w, r)
+			return
+		}
+		routerHandler.ServeHTTP(w, r)
+	})
+}
+
+func isAdminPath(path string, adminPrefix string) bool {
+	flag := path == adminPrefix || path == adminPrefix+"/" || strings.HasPrefix(path, adminPrefix+"/")
+	return flag || strings.HasPrefix(path, "/admin/assets")
 }

@@ -20,8 +20,8 @@ type AppConfig struct {
 }
 
 type Config struct {
-	RouterPort           int
-	AdminPort            int
+	ServerPort           int
+	AdminPrefix          string
 	DataDir              string
 	DatabasePath         string
 	WorkersDir           string
@@ -72,8 +72,8 @@ func AppConfigKeys() []string {
 
 func Load() Config {
 	cfg := Config{
-		RouterPort:           getInt("ROUTER_PORT", 3100),
-		AdminPort:            getInt("ADMIN_PORT", 3101),
+		ServerPort:           getInt("SERVER_PORT", 3100),
+		AdminPrefix:          getEnv("ADMIN_PREFIX", "admin"),
 		DataDir:              getEnv("DATA_DIR", "./data"),
 		DatabasePath:         getEnv("DATABASE_PATH", "./data/app.db"),
 		WorkersDir:           getEnv("WORKERS_DIR", "./data/workers"),
@@ -86,8 +86,17 @@ func Load() Config {
 		AdminToken: getEnv("ADMIN_TOKEN", "123123"),
 		LogLevel:   getEnv("LOG_LEVEL", "info"),
 	}
-
+	nomralizeConfig(&cfg)
 	return cfg
+}
+
+func nomralizeConfig(cfg *Config) {
+	if cfg.AdminPrefix == "" {
+		cfg.AdminPrefix = "/admin"
+	} else if !strings.HasPrefix(cfg.AdminPrefix, "/") {
+		cfg.AdminPrefix = "/" + cfg.AdminPrefix
+	}
+	cfg.AdminPrefix = strings.TrimSuffix(cfg.AdminPrefix, "/")
 }
 
 func IsAppConfigKey(key string) bool {

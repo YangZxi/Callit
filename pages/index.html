@@ -9,6 +9,10 @@
     <!-- 深色模式 -->
     <meta name="theme-color" content="#DDE4F9" media="(prefers-color-scheme: dark)">
     <title>Callit</title>
+    <script>
+      window.__BASE_PREFIX__ = "{{ .base_prefix }}";
+      console.log("Base prefix:", window.__BASE_PREFIX__);
+    </script>
   </head>
   <body>
     <div id="root"></div>

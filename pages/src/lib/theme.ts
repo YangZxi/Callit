@@ -1,3 +1,4 @@
+import { BASE_PREFIX } from "@/main";
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 
 const ThemeProps = {
@@ -34,7 +35,7 @@ function applyThemeWrapperBg(theme: Theme) {
   if (!canUseDOM) return;
   const themeWrapper = document.querySelector(".theme-wrapper");
   const bgImg = theme === "light" ? "/web_bg.png" : "/web_bg_dark.png";
-  if (themeWrapper) (themeWrapper as HTMLElement).style.backgroundImage = `url(${bgImg})`;
+  if (themeWrapper) (themeWrapper as HTMLElement).style.backgroundImage = `url(${BASE_PREFIX}/static${bgImg})`;
 }
 
 function emit() {

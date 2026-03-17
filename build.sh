@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "$0")" && pwd)
 FRONT_DIR="$ROOT_DIR/pages"
 DIST_DIR="$ROOT_DIR/dist"
-BACK_PUBLIC="$DIST_DIR/public"
+BACKEND_PUBLIC="$DIST_DIR/public"
+BACKEND_ADMIN_PUBLIC="$DIST_DIR/public/admin"
 
 log() {
   printf "[build] %s\n" "$1"
@@ -17,9 +18,9 @@ pnpm run build
 
 log "同步前端静态资源到 public"
 cd "$ROOT_DIR"
-rm -rf "$BACK_PUBLIC"
-mkdir -p "$BACK_PUBLIC"
-cp -r "$FRONT_DIR/dist"/* "$BACK_PUBLIC"/
+rm -rf "$BACKEND_PUBLIC"
+mkdir -p "$BACKEND_ADMIN_PUBLIC"
+cp -r "$FRONT_DIR/dist"/* "$BACKEND_ADMIN_PUBLIC"/
 
 log "构建后端 (Go)"
 mkdir -p "$DIST_DIR"

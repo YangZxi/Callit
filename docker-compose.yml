@@ -9,8 +9,7 @@ services:
       - AI_MODEL=minimax/minimax-m2.5
       # - TZ=Asia/Shanghai
     ports:
-      - "3100:3100" # router
-      - "3101:3101" # admin
+      - "3100:3100"
     volumes:
       - ./data:/app/data
     restart: unless-stopped

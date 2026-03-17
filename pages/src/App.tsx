@@ -10,6 +10,7 @@ import DependenciesPage from "./pages/DependenciesPage";
 import ConfigManagePage from "./pages/ConfigManagePage";
 import AboutPage from "./pages/AboutPage";
 import { checkAdminAuthenticated } from "./lib/admin-auth";
+import { BASE_PREFIX } from "./main";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<"loading" | "authenticated" | "guest">("loading");
@@ -34,7 +35,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <section className="py-10 text-sm text-default-500">正在校验登录状态...</section>;
   }
   if (status === "guest") {
-    return <Navigate replace to="/" />;
+    return <Navigate replace to={`/${BASE_PREFIX}`} />;
   }
   return children;
 }
@@ -42,6 +43,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function App() {
   const className = "container mx-auto box-border max-w-7xl px-3 md:px-6";
   const style = { minHeight: "var(--main-height)", paddingTop: "36px" };
+  const PREFIX = BASE_PREFIX;
 
   return (<>
     {<Navbar />}
@@ -50,13 +52,13 @@ function App() {
       style={style}
     >
       <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/workers" element={<ProtectedRoute><WorkerListPage /></ProtectedRoute>} />
-        <Route path="/workers/:id" element={<ProtectedRoute><WorkerDetailPage /></ProtectedRoute>} />
-        <Route path="/dependencies" element={<ProtectedRoute><DependenciesPage /></ProtectedRoute>} />
-        <Route path="/config" element={<ProtectedRoute><ConfigManagePage /></ProtectedRoute>} />
-        <Route path="/about" element={<AboutPage />} />
-        <Route path="*" element={<HomePage />} />
+        <Route path={`${PREFIX}/`} element={<HomePage />} />
+        <Route path={`${PREFIX}/workers`} element={<ProtectedRoute><WorkerListPage /></ProtectedRoute>} />
+        <Route path={`${PREFIX}/workers/:id`} element={<ProtectedRoute><WorkerDetailPage /></ProtectedRoute>} />
+        <Route path={`${PREFIX}/dependencies`} element={<ProtectedRoute><DependenciesPage /></ProtectedRoute>} />
+        <Route path={`${PREFIX}/config`} element={<ProtectedRoute><ConfigManagePage /></ProtectedRoute>} />
+        <Route path={`${PREFIX}/about`} element={<AboutPage />} />
+        <Route path={`${PREFIX}/*`} element={<HomePage />} />
       </Routes>
     </main>
     {<Footer />}

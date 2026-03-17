@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Button, Input } from "@heroui/react";
 import { useNavigate } from "react-router-dom";
+import { BASE_PREFIX } from "@/main";
 
 import { checkAdminAuthenticated, loginWithAdminToken } from "@/lib/admin-auth";
 
@@ -18,7 +19,7 @@ export default function HomePage() {
       const authenticated = await checkAdminAuthenticated().catch(() => false);
       if (!active) return;
       if (authenticated) {
-        navigate("/workers", { replace: true });
+        navigate(`${BASE_PREFIX}/workers`, { replace: true });
         return;
       }
       setCheckingAuth(false);
@@ -39,7 +40,7 @@ export default function HomePage() {
     setError("");
     try {
       await loginWithAdminToken(token);
-      navigate("/workers", { replace: true });
+      navigate(`${BASE_PREFIX}/workers`, { replace: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : "登录失败";
       setError(message);

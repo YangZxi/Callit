@@ -100,14 +100,14 @@ func NewEngine(store *db.Store, reg *registry.Registry, cfg config.Config) *gin.
 	e := gin.New()
 	e.Use(gin.Recovery(), common.RequestIDMiddleware())
 
-	authAPI := e.Group("/api/auth")
+	authAPI := e.Group(cfg.AdminPrefix + "/api/auth")
 	{
 		authAPI.GET("/status", s.authStatus)
 		authAPI.POST("/login", s.login)
 		authAPI.POST("/logout", s.logout)
 	}
 
-	api := e.Group("/api")
+	api := e.Group(cfg.AdminPrefix + "/api")
 	api.Use(s.authMiddleware())
 	{
 		api.GET("/dependencies", s.listDependencies)
@@ -136,22 +136,46 @@ func NewEngine(store *db.Store, reg *registry.Registry, cfg config.Config) *gin.
 	}
 
 	// 静态资源
-	e.Static("/assets", "./public/assets")
+	e.Static(cfg.AdminPrefix+"/assets", "./public/admin/assets")
+	e.Static(cfg.AdminPrefix+"/static", "./public/admin/static")
+	if cfg.AdminPrefix != "/admin" {
+		e.Static("/admin/assets", "./public/admin/assets")
+	}
 
+	e.LoadHTMLFiles("public/admin/index.html")
 	e.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
-		if strings.HasPrefix(path, "/api") {
+		if isAdminAPIPath(path, cfg.AdminPrefix) {
 			apiError(c, http.StatusNotFound, "404 NotFound")
 			return
 		}
-		filePath := filepath.Join("public", filepath.Clean(path))
-		if _, err := os.Stat(filePath); err == nil {
-			c.File(filePath)
+		// 如果设置了 AdminPrefix，那么需要拦截除了 /admin/assets 以外的请求
+		if !strings.HasPrefix(path, cfg.AdminPrefix+"/") && !strings.HasPrefix(path, "/admin/assets") {
+			apiError(c, http.StatusNotFound, "404 NotFound")
 			return
 		}
-		c.File("./public/index.html")
+
+		c.HTML(http.StatusOK, "index.html", gin.H{
+			"base_prefix": cfg.AdminPrefix,
+		})
 	})
 	return e
+}
+
+func isAdminAPIPath(path string, adminPrefix string) bool {
+	return path == adminPrefix+"/api" || path == adminPrefix+"/api/" || strings.HasPrefix(path, adminPrefix+"/api/")
+}
+
+func publicFilePathFromAdminPath(path string, adminPrefix string) string {
+	trimmed := strings.TrimPrefix(path, adminPrefix)
+	if trimmed == "" || trimmed == "/" {
+		return "public/admin"
+	}
+	cleaned := strings.TrimPrefix(filepath.Clean(trimmed), "/")
+	if cleaned == "." || cleaned == "" {
+		return "public/admin"
+	}
+	return filepath.Join("public/admin", cleaned)
 }
 
 func (s *Server) authMiddleware() gin.HandlerFunc {

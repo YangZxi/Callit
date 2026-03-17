@@ -1,7 +1,8 @@
 /// <reference types="vite/client" />
 import { addToast } from "@heroui/react";
+import { BASE_PREFIX } from "@/main";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "/api";
+export const API_BASE = `${BASE_PREFIX}/api`;
 
 const toastCache = new Set<string>();
 

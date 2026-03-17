@@ -3,6 +3,10 @@ import react from "@vitejs/plugin-react-swc";
 import path from "node:path";
 
 export default defineConfig({
+  base: "/admin/",
+  build: {
+    outDir: "dist",
+  },
   plugins: [react()],
   resolve: {
     alias: {
@@ -12,13 +16,10 @@ export default defineConfig({
   server: {
     port: 3180,
     proxy: {
-      "/api": {
-        target: "http://localhost:3101",
+      "/admin/api": {
+        target: "http://localhost:3100",
         changeOrigin: true,
       },
     },
-  },
-  build: {
-    outDir: "dist",
   },
 });

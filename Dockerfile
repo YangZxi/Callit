@@ -34,16 +34,14 @@ RUN apt-get update \
 
 COPY --from=backend-builder --chown=callit:callit /dist/callit /app/callit
 COPY --from=backend-builder --chown=callit:callit /app/resources /app/resources
-COPY --from=frontend-builder --chown=callit:callit /app/pages/dist /app/public
+COPY --from=frontend-builder --chown=callit:callit /app/pages/dist /app/public/admin
 
 RUN mkdir -p /app/data/workers /app/data/temps \
     && chown -R callit:callit /app/data
 
 ENV DATA_DIR=/app/data
 ENV ROUTER_PORT=3100
-ENV ADMIN_PORT=3101
 
 EXPOSE 3100
-EXPOSE 3101
 
 CMD ["/app/callit"]
