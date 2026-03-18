@@ -57,7 +57,7 @@ func (s *Server) handleInvoke(c *gin.Context) {
 		c.String(http.StatusNotFound, "404 NotFound")
 		return
 	}
-	fn := matched.Worker
+	worker := matched.Worker
 
 	rawBody, err := io.ReadAll(c.Request.Body)
 	if err != nil {
@@ -85,7 +85,7 @@ func (s *Server) handleInvoke(c *gin.Context) {
 	input := model.WorkerInput{
 		Request: model.WorkerRequest{
 			Method:  method,
-			URI:     buildRouteSuffix(fn.Route, c.Request.URL.Path),
+			URI:     buildRouteSuffix(worker.Route, c.Request.URL.Path),
 			URL:     buildFullURL(c.Request),
 			Params:  buildQueryParams(c.Request.URL),
 			Headers: headers,
@@ -94,18 +94,18 @@ func (s *Server) handleInvoke(c *gin.Context) {
 		},
 		Event: model.WorkerEvent{
 			RequestID: requestID,
-			Runtime:   fn.Runtime,
-			WorkerID:  fn.ID,
-			Route:     fn.Route,
+			Runtime:   worker.Runtime,
+			WorkerID:  worker.ID,
+			Route:     worker.Route,
 		},
 	}
 
-	timeoutCtx, cancel := context.WithTimeout(c.Request.Context(), time.Duration(fn.TimeoutMS)*time.Millisecond)
+	timeoutCtx, cancel := context.WithTimeout(c.Request.Context(), time.Duration(worker.TimeoutMS)*time.Millisecond)
 	defer cancel()
 
-	workerDir := filepath.Join(s.dataDir, "workers", fn.ID)
-	execResult := executor.Run(timeoutCtx, fn, workerDir, input)
-	s.recordRunningLog(fn.ID, requestID, input, execResult)
+	workerDir := filepath.Join(s.dataDir, "workers", worker.ID)
+	execResult := executor.Run(timeoutCtx, worker, workerDir, input)
+	s.recordRunningLog(worker.ID, requestID, input, execResult)
 
 	if execResult.TimedOut {
 		common.ErrorResponse(c, http.StatusGatewayTimeout, "execution timeout")
@@ -341,7 +341,7 @@ func (s *Server) insertWorkerLogAsync(entry model.WorkerLog) {
 		persistCtx, persistCancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer persistCancel()
 
-		if err := s.store.InsertWorkerLog(persistCtx, logEntry); err != nil {
+		if err := s.store.WorkerLog.Insert(persistCtx, logEntry); err != nil {
 			log.Printf("写入函数日志失败: %v", err)
 		}
 	}(entry)

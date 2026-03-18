@@ -247,7 +247,7 @@ func (s *Server) createWorker(c *gin.Context) {
 		req.TimeoutMS = 5000
 	}
 
-	fn := model.Worker{
+	worker := model.Worker{
 		ID:        uuid.NewString(),
 		Name:      strings.TrimSpace(req.Name),
 		Runtime:   strings.TrimSpace(req.Runtime),
@@ -255,12 +255,12 @@ func (s *Server) createWorker(c *gin.Context) {
 		TimeoutMS: req.TimeoutMS,
 		Enabled:   enabled,
 	}
-	if err := validateWorker(fn); err != nil {
+	if err := validateWorker(worker); err != nil {
 		apiError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	created, err := s.store.CreateWorker(c.Request.Context(), fn)
+	created, err := s.store.Worker.Create(c.Request.Context(), worker)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed: worker.route") {
 			apiError(c, http.StatusConflict, "路由已存在")
@@ -272,13 +272,13 @@ func (s *Server) createWorker(c *gin.Context) {
 
 	functionDir := filepath.Join(s.dataDir, "workers", created.ID)
 	if err := os.MkdirAll(functionDir, 0o755); err != nil {
-		_ = s.store.DeleteWorker(context.Background(), created.ID)
+		_ = s.store.Worker.Delete(context.Background(), created.ID)
 		apiError(c, http.StatusInternalServerError, fmt.Sprintf("创建函数目录失败: %v", err))
 		return
 	}
 	if err := createMainFileFromTemplate(functionDir, created.Runtime); err != nil {
 		_ = os.RemoveAll(functionDir)
-		_ = s.store.DeleteWorker(context.Background(), created.ID)
+		_ = s.store.Worker.Delete(context.Background(), created.ID)
 		apiError(c, http.StatusInternalServerError, fmt.Sprintf("创建入口文件失败: %v", err))
 		return
 	}
@@ -297,7 +297,7 @@ func (s *Server) updateWorker(c *gin.Context) {
 		return
 	}
 
-	origin, err := s.store.GetWorkerByID(c.Request.Context(), id)
+	origin, err := s.store.Worker.GetByID(c.Request.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			apiError(c, http.StatusNotFound, "函数不存在")
@@ -343,7 +343,7 @@ func (s *Server) updateWorker(c *gin.Context) {
 		return
 	}
 
-	updated, err := s.store.UpdateWorker(c.Request.Context(), updating)
+	updated, err := s.store.Worker.Update(c.Request.Context(), updating)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			apiError(c, http.StatusNotFound, "函数不存在")
@@ -365,7 +365,7 @@ func (s *Server) updateWorker(c *gin.Context) {
 }
 
 func (s *Server) listWorkers(c *gin.Context) {
-	list, err := s.store.ListWorkers(c.Request.Context())
+	list, err := s.store.Worker.List(c.Request.Context())
 	if err != nil {
 		apiError(c, http.StatusInternalServerError, err.Error())
 		return
@@ -379,7 +379,7 @@ func (s *Server) getWorker(c *gin.Context) {
 		apiError(c, http.StatusBadRequest, "id 不能为空")
 		return
 	}
-	fn, err := s.store.GetWorkerByID(c.Request.Context(), id)
+	worker, err := s.store.Worker.GetByID(c.Request.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			apiError(c, http.StatusNotFound, "函数不存在")
@@ -388,7 +388,7 @@ func (s *Server) getWorker(c *gin.Context) {
 		apiError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	apiSuccess(c, fn)
+	apiSuccess(c, worker)
 }
 
 func (s *Server) listWorkerLogs(c *gin.Context) {
@@ -397,7 +397,7 @@ func (s *Server) listWorkerLogs(c *gin.Context) {
 		apiError(c, http.StatusBadRequest, "id 不能为空")
 		return
 	}
-	if _, err := s.store.GetWorkerByID(c.Request.Context(), id); err != nil {
+	if _, err := s.store.Worker.GetByID(c.Request.Context(), id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			apiError(c, http.StatusNotFound, "函数不存在")
 			return
@@ -432,7 +432,7 @@ func (s *Server) listWorkerLogs(c *gin.Context) {
 		pageSize = n
 	}
 
-	logs, total, err := s.store.ListWorkerLogsPaged(c.Request.Context(), id, page, pageSize)
+	logs, total, err := s.store.WorkerLog.ListPaged(c.Request.Context(), id, page, pageSize)
 	if err != nil {
 		apiError(c, http.StatusInternalServerError, err.Error())
 		return
@@ -451,7 +451,7 @@ func (s *Server) deleteWorker(c *gin.Context) {
 		apiError(c, http.StatusBadRequest, "id 不能为空")
 		return
 	}
-	if err := s.store.DeleteWorker(c.Request.Context(), id); err != nil {
+	if err := s.store.Worker.Delete(c.Request.Context(), id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			apiError(c, http.StatusNotFound, "函数不存在")
 			return
@@ -474,7 +474,7 @@ func (s *Server) deleteWorker(c *gin.Context) {
 
 func (s *Server) uploadFiles(c *gin.Context) {
 	id := c.Param("id")
-	fn, err := s.store.GetWorkerByID(c.Request.Context(), id)
+	worker, err := s.store.Worker.GetByID(c.Request.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			apiError(c, http.StatusNotFound, "函数不存在")
@@ -515,7 +515,7 @@ func (s *Server) uploadFiles(c *gin.Context) {
 		}
 	}
 
-	if err := ensureMainFileExists(functionDir, fn.Runtime); err != nil {
+	if err := ensureMainFileExists(functionDir, worker.Runtime); err != nil {
 		apiError(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -530,7 +530,7 @@ func (s *Server) uploadFiles(c *gin.Context) {
 
 func (s *Server) listWorkerFiles(c *gin.Context) {
 	id := c.Param("id")
-	if _, err := s.store.GetWorkerByID(c.Request.Context(), id); err != nil {
+	if _, err := s.store.Worker.GetByID(c.Request.Context(), id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			apiError(c, http.StatusNotFound, "函数不存在")
 			return
@@ -564,7 +564,7 @@ func (s *Server) getFileContent(c *gin.Context) {
 		return
 	}
 
-	if _, err := s.store.GetWorkerByID(c.Request.Context(), id); err != nil {
+	if _, err := s.store.Worker.GetByID(c.Request.Context(), id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			apiError(c, http.StatusNotFound, "函数不存在")
 			return
@@ -622,7 +622,7 @@ func (s *Server) saveFileContent(c *gin.Context) {
 		return
 	}
 
-	fn, err := s.store.GetWorkerByID(c.Request.Context(), id)
+	worker, err := s.store.Worker.GetByID(c.Request.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			apiError(c, http.StatusNotFound, "函数不存在")
@@ -644,7 +644,7 @@ func (s *Server) saveFileContent(c *gin.Context) {
 		return
 	}
 
-	mainFile := mainFilenameByRuntime(fn.Runtime)
+	mainFile := mainFilenameByRuntime(worker.Runtime)
 	if filename != mainFile {
 		if _, err := os.Stat(filepath.Join(functionDir, mainFile)); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -682,7 +682,7 @@ func (s *Server) deleteFile(c *gin.Context) {
 		return
 	}
 
-	fn, err := s.store.GetWorkerByID(c.Request.Context(), id)
+	worker, err := s.store.Worker.GetByID(c.Request.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			apiError(c, http.StatusNotFound, "函数不存在")
@@ -692,7 +692,7 @@ func (s *Server) deleteFile(c *gin.Context) {
 		return
 	}
 
-	mainFile := mainFilenameByRuntime(fn.Runtime)
+	mainFile := mainFilenameByRuntime(worker.Runtime)
 	if filename == mainFile {
 		apiError(c, http.StatusBadRequest, "入口文件不能删除")
 		return
@@ -708,7 +708,7 @@ func (s *Server) deleteFile(c *gin.Context) {
 		return
 	}
 
-	if err := ensureMainFileExists(filepath.Join(s.dataDir, "workers", id), fn.Runtime); err != nil {
+	if err := ensureMainFileExists(filepath.Join(s.dataDir, "workers", id), worker.Runtime); err != nil {
 		apiError(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -742,7 +742,7 @@ func (s *Server) renameFile(c *gin.Context) {
 		return
 	}
 
-	fn, err := s.store.GetWorkerByID(c.Request.Context(), id)
+	worker, err := s.store.Worker.GetByID(c.Request.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			apiError(c, http.StatusNotFound, "函数不存在")
@@ -752,7 +752,7 @@ func (s *Server) renameFile(c *gin.Context) {
 		return
 	}
 
-	mainFile := mainFilenameByRuntime(fn.Runtime)
+	mainFile := mainFilenameByRuntime(worker.Runtime)
 	if filename == mainFile || newFilename == mainFile {
 		apiError(c, http.StatusBadRequest, "入口文件不能重命名")
 		return
@@ -789,7 +789,7 @@ func (s *Server) disableWorker(c *gin.Context) {
 
 func (s *Server) setWorkerEnabled(c *gin.Context, enabled bool) {
 	id := c.Param("id")
-	updated, err := s.store.SetWorkerEnabled(c.Request.Context(), id, enabled)
+	updated, err := s.store.Worker.SetEnabled(c.Request.Context(), id, enabled)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			apiError(c, http.StatusNotFound, "函数不存在")
@@ -808,7 +808,7 @@ func (s *Server) setWorkerEnabled(c *gin.Context, enabled bool) {
 func (s *Server) reloadRegistry(ctx context.Context) error {
 	reloadCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	funcs, err := s.store.ListEnabledWorkers(reloadCtx)
+	funcs, err := s.store.Worker.ListEnabled(reloadCtx)
 	if err != nil {
 		return fmt.Errorf("加载启用函数失败: %w", err)
 	}
@@ -816,17 +816,17 @@ func (s *Server) reloadRegistry(ctx context.Context) error {
 	return nil
 }
 
-func validateWorker(fn model.Worker) error {
-	if strings.TrimSpace(fn.Name) == "" {
+func validateWorker(worker model.Worker) error {
+	if strings.TrimSpace(worker.Name) == "" {
 		return fmt.Errorf("name 不能为空")
 	}
-	if fn.Runtime != "python" && fn.Runtime != "node" {
+	if worker.Runtime != "python" && worker.Runtime != "node" {
 		return fmt.Errorf("runtime 仅支持 python 或 node")
 	}
-	if err := model.ValidateRoute(fn.Route); err != nil {
+	if err := model.ValidateRoute(worker.Route); err != nil {
 		return err
 	}
-	if fn.TimeoutMS <= 0 {
+	if worker.TimeoutMS <= 0 {
 		return fmt.Errorf("timeout_ms 必须大于 0")
 	}
 	return nil

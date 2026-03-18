@@ -3,7 +3,6 @@ CREATE TABLE worker (
     name TEXT NOT NULL,
     runtime TEXT NOT NULL CHECK(runtime IN ('python','node')),
     route TEXT NOT NULL UNIQUE,
-    methods TEXT NOT NULL,
     timeout_ms INTEGER NOT NULL DEFAULT 5000,
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,

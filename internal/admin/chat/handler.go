@@ -325,7 +325,7 @@ func (h *Handler) getWorkerByID(c *gin.Context) (model.Worker, bool) {
 		writeError(c, http.StatusBadRequest, "id 不能为空")
 		return model.Worker{}, false
 	}
-	worker, err := h.store.GetWorkerByID(c.Request.Context(), id)
+	worker, err := h.store.Worker.GetByID(c.Request.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(c, http.StatusNotFound, "函数不存在")

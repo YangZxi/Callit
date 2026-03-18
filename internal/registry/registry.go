@@ -56,19 +56,19 @@ func New() *Registry {
 func (r *Registry) Reload(functions []model.Worker) {
 	nextExact := make(map[string]model.Worker, len(functions))
 	nextWildcard := make(map[string]model.Worker)
-	for _, fn := range functions {
-		if !fn.Enabled {
+	for _, worker := range functions {
+		if !worker.Enabled {
 			continue
 		}
 
 		target := nextExact
-		routeKey := normalizeRoutePath(fn.Route)
-		if strings.HasSuffix(fn.Route, "/*") {
+		routeKey := normalizeRoutePath(worker.Route)
+		if strings.HasSuffix(worker.Route, "/*") {
 			target = nextWildcard
 			// 只保留前缀部分，示例: /tea/* => /tea
-			routeKey = normalizeRoutePath(strings.TrimSuffix(fn.Route, "/*"))
+			routeKey = normalizeRoutePath(strings.TrimSuffix(worker.Route, "/*"))
 		}
-		target[routeKey] = fn
+		target[routeKey] = worker
 	}
 
 	wildcards := make([]wildcardRoute, 0, len(nextWildcard))
@@ -96,8 +96,8 @@ func (r *Registry) Match(route string) RouterInfo {
 
 	normalizedRoute := normalizeRoutePath(route)
 
-	if fn, ok := r.exactRoutes[normalizedRoute]; ok {
-		return RouterInfo{Worker: fn, Found: true}
+	if worker, ok := r.exactRoutes[normalizedRoute]; ok {
+		return RouterInfo{Worker: worker, Found: true}
 	}
 
 	for _, item := range r.wildcardRoutes {

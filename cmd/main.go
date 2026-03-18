@@ -39,7 +39,7 @@ func main() {
 	}
 
 	reg := registry.New()
-	funcs, err := store.ListEnabledWorkers(context.Background())
+	funcs, err := store.Worker.ListEnabled(context.Background())
 	if err != nil {
 		log.Fatalf("加载启用函数失败: %v", err)
 	}

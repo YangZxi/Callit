@@ -32,16 +32,16 @@ type ExecuteResult struct {
 }
 
 // Run 执行函数脚本。
-func Run(parent context.Context, fn model.Worker, workerDir string, input model.WorkerInput) (result ExecuteResult) {
+func Run(parent context.Context, worker model.Worker, workerDir string, input model.WorkerInput) (result ExecuteResult) {
 	started := time.Now()
 	result = ExecuteResult{Headers: map[string]string{}}
 	defer func() {
 		result.DurationMS = time.Since(started).Milliseconds()
 	}()
 
-	mainFile := mainFilenameByRuntime(fn.Runtime)
+	mainFile := mainFilenameByRuntime(worker.Runtime)
 	if mainFile == "" {
-		result.Err = fmt.Errorf("不支持的 runtime: %s", fn.Runtime)
+		result.Err = fmt.Errorf("不支持的 runtime: %s", worker.Runtime)
 		return
 	}
 	if _, err := os.Stat(filepath.Join(workerDir, mainFile)); err != nil {
@@ -55,7 +55,7 @@ func Run(parent context.Context, fn model.Worker, workerDir string, input model.
 		return
 	}
 
-	bridgeStdout, bridgeStderr, runErr := runWithHandlerBridge(parent, fn, workerDir, payload)
+	bridgeStdout, bridgeStderr, runErr := runWithHandlerBridge(parent, worker, workerDir, payload)
 	result.Stderr = bridgeStderr
 
 	if errors.Is(parent.Err(), context.DeadlineExceeded) {
@@ -135,8 +135,8 @@ func splitBridgeOutput(stdout string) (logOutput string, resultOutput string, er
 	return logOutput, resultOutput, nil
 }
 
-func runWithHandlerBridge(parent context.Context, fn model.Worker, functionDir string, payload []byte) (stdout string, stderr string, err error) {
-	bridgeCmd, err := buildBridgeCommand(parent, fn, functionDir)
+func runWithHandlerBridge(parent context.Context, worker model.Worker, functionDir string, payload []byte) (stdout string, stderr string, err error) {
+	bridgeCmd, err := buildBridgeCommand(parent, worker, functionDir)
 	if err != nil {
 		return "", "", err
 	}
@@ -153,15 +153,15 @@ func runWithHandlerBridge(parent context.Context, fn model.Worker, functionDir s
 	return out.String(), errOut.String(), nil
 }
 
-func buildBridgeCommand(parent context.Context, fn model.Worker, functionDir string) (*exec.Cmd, error) {
+func buildBridgeCommand(parent context.Context, worker model.Worker, functionDir string) (*exec.Cmd, error) {
 	filename := ""
-	switch fn.Runtime {
+	switch worker.Runtime {
 	case "python":
 		filename = "python.py"
 	case "node":
 		filename = "node.js"
 	default:
-		return nil, fmt.Errorf("不支持的 runtime: %s", fn.Runtime)
+		return nil, fmt.Errorf("不支持的 runtime: %s", worker.Runtime)
 	}
 	path := filepath.Join("resources/worker_entrypoints", filename)
 	content, err := os.ReadFile(path)
@@ -170,17 +170,17 @@ func buildBridgeCommand(parent context.Context, fn model.Worker, functionDir str
 	}
 	code := string(content)
 
-	switch fn.Runtime {
+	switch worker.Runtime {
 	case "python":
 		cmd := exec.CommandContext(parent, "python3", "-c", code)
-		cmd.Env = buildRuntimeEnv(functionDir, fn.Runtime)
+		cmd.Env = buildRuntimeEnv(functionDir, worker.Runtime)
 		return cmd, nil
 	case "node":
 		cmd := exec.CommandContext(parent, "node", "-e", code)
-		cmd.Env = buildRuntimeEnv(functionDir, fn.Runtime)
+		cmd.Env = buildRuntimeEnv(functionDir, worker.Runtime)
 		return cmd, nil
 	default:
-		return nil, fmt.Errorf("不支持的 runtime: %s", fn.Runtime)
+		return nil, fmt.Errorf("不支持的 runtime: %s", worker.Runtime)
 	}
 }
 

@@ -8,14 +8,18 @@ import (
 
 // Worker 表示可执行 Worker 元数据。
 type Worker struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Runtime   string    `json:"runtime"`
-	Route     string    `json:"route"`
-	TimeoutMS int       `json:"timeout_ms"`
-	Enabled   bool      `json:"enabled"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        string    `json:"id" gorm:"column:id;primaryKey;type:text"`
+	Name      string    `json:"name" gorm:"column:name;type:text;not null"`
+	Runtime   string    `json:"runtime" gorm:"column:runtime;type:text;not null"`
+	Route     string    `json:"route" gorm:"column:route;type:text;not null;uniqueIndex"`
+	TimeoutMS int       `json:"timeout_ms" gorm:"column:timeout_ms;not null;default:5000"`
+	Enabled   bool      `json:"enabled" gorm:"column:enabled;not null;default:true"`
+	CreatedAt time.Time `json:"created_at" gorm:"column:created_at;not null;autoCreateTime:false"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime:false"`
+}
+
+func (Worker) TableName() string {
+	return "worker"
 }
 
 // Validate 用于校验函数配置。
