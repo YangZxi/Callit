@@ -2,12 +2,15 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 type AppConfig struct {
@@ -73,6 +76,7 @@ func AppConfigKeys() []string {
 func Load() Config {
 	cfg := Config{
 		ServerPort:           getInt("SERVER_PORT", 3100),
+		AdminToken:           getEnv("ADMIN_TOKEN", ""),
 		AdminPrefix:          getEnv("ADMIN_PREFIX", "admin"),
 		DataDir:              getEnv("DATA_DIR", "./data"),
 		DatabasePath:         getEnv("DATABASE_PATH", "./data/app.db"),
@@ -81,16 +85,20 @@ func Load() Config {
 		ChatSessionsDir:      getEnv("CHAT_SESSIONS_DIR", "./data/chat-sessions"),
 		RuntimeLibDir:        getEnv("RUNTIME_LIB_DIR", "./data/.lib"),
 
-		MaxFileSize: 1 << 30, // 1GB
+		MaxFileSize: (1 << 20) * 100, // 100MB
 
-		AdminToken: getEnv("ADMIN_TOKEN", "123123"),
-		LogLevel:   getEnv("LOG_LEVEL", "info"),
+		LogLevel: getEnv("LOG_LEVEL", "info"),
 	}
 	nomralizeConfig(&cfg)
 	return cfg
 }
 
 func nomralizeConfig(cfg *Config) {
+	if cfg.AdminToken == "" {
+		cfg.AdminToken = uuid.New().String()
+		fmt.Printf("系统已随机生成 AdminToken，如需固定 Token，请设置环境变量 ADMIN_TOKEN\n", cfg.AdminToken)
+	}
+
 	if cfg.AdminPrefix == "" {
 		cfg.AdminPrefix = "/admin"
 	} else if !strings.HasPrefix(cfg.AdminPrefix, "/") {

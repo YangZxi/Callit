@@ -96,7 +96,7 @@ export default function WorkerListPage() {
     setCreating(true);
     try {
       if (modalMode === "create") {
-        await api.post<WorkerItem>("/workers", {
+        await api.post<WorkerItem>("/workers/create", {
           name: form.name.trim(),
           runtime: form.runtime,
           route: form.route.trim(),
@@ -104,7 +104,8 @@ export default function WorkerListPage() {
           enabled: form.enabled,
         });
       } else {
-        await api.put<WorkerItem>(`/workers/${editingID}`, {
+        await api.post<WorkerItem>("/workers/update", {
+          id: editingID,
           name: form.name.trim(),
           runtime: form.runtime,
           route: form.route.trim(),
@@ -146,7 +147,7 @@ export default function WorkerListPage() {
     if (actioningID) return;
     setActioningID(item.id);
     try {
-      await api.post<WorkerItem>(`/workers/${item.id}/${enabled ? "enable" : "disable"}`);
+      await api.post<WorkerItem>(`/workers/${enabled ? "enable" : "disable"}`, { id: item.id });
       await loadWorkers();
     } finally {
       setActioningID("");
@@ -159,7 +160,7 @@ export default function WorkerListPage() {
     if (!ok) return;
     setActioningID(item.id);
     try {
-      await api.delete<{ ok: boolean }>(`/workers/${item.id}`);
+      await api.post<{ ok: boolean }>("/workers/delete", { id: item.id });
       await loadWorkers();
     } finally {
       setActioningID("");

@@ -17,26 +17,12 @@ import (
 	"sync"
 	"unicode"
 
+	"callit/internal/admin/message"
+
 	"github.com/gin-gonic/gin"
 )
 
 const dependencyTaskBusyMessage = "有其他安装或移除依赖请求在执行，请稍后再试。"
-
-type dependencyInfo struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-}
-
-type dependencyManageRequest struct {
-	Runtime string `json:"runtime"`
-	Action  string `json:"action"`
-	Package string `json:"package"`
-}
-
-type dependencyLogEvent struct {
-	Stream string `json:"stream"`
-	Text   string `json:"text"`
-}
 
 type pnpmListItem struct {
 	Dependencies map[string]struct {
@@ -56,7 +42,7 @@ func (s *Server) listDependencies(c *gin.Context) {
 		return
 	}
 
-	var result []dependencyInfo
+	var result []message.DependencyInfo
 	switch runtime {
 	case "node":
 		result, err = s.listNodeDependencies(c.Request.Context())
@@ -74,7 +60,7 @@ func (s *Server) listDependencies(c *gin.Context) {
 }
 
 func (s *Server) manageDependencies(c *gin.Context) {
-	var req dependencyManageRequest
+	var req message.DependencyManageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiError(c, http.StatusBadRequest, "请求体格式错误")
 		return
@@ -115,7 +101,7 @@ func (s *Server) manageDependencies(c *gin.Context) {
 		return
 	}
 
-	_ = writeSSEEvent(c, "log", dependencyLogEvent{
+	_ = writeSSEEvent(c, "log", message.DependencyLogEvent{
 		Stream: "stdout",
 		Text:   "$ " + strings.Join(cmd.Args, " "),
 	})
@@ -174,7 +160,7 @@ func normalizeDependencyPackage(raw string) (string, error) {
 	return pkg, nil
 }
 
-func (s *Server) listNodeDependencies(ctx context.Context) ([]dependencyInfo, error) {
+func (s *Server) listNodeDependencies(ctx context.Context) ([]message.DependencyInfo, error) {
 	nodeDir, err := s.ensureNodeDependencyDir()
 	if err != nil {
 		return nil, err
@@ -190,7 +176,7 @@ func (s *Server) listNodeDependencies(ctx context.Context) ([]dependencyInfo, er
 	return parseNodeDependencies(output)
 }
 
-func (s *Server) listPythonDependencies(ctx context.Context) ([]dependencyInfo, error) {
+func (s *Server) listPythonDependencies(ctx context.Context) ([]message.DependencyInfo, error) {
 	pipPath, _, err := s.ensurePythonDependencyEnv(ctx)
 	if err != nil {
 		return nil, err
@@ -205,7 +191,7 @@ func (s *Server) listPythonDependencies(ctx context.Context) ([]dependencyInfo, 
 	return parsePythonDependencies(output)
 }
 
-func parseNodeDependencies(raw []byte) ([]dependencyInfo, error) {
+func parseNodeDependencies(raw []byte) ([]message.DependencyInfo, error) {
 	var list []pnpmListItem
 	if err := json.Unmarshal(raw, &list); err != nil {
 		var one pnpmListItem
@@ -215,7 +201,7 @@ func parseNodeDependencies(raw []byte) ([]dependencyInfo, error) {
 		list = []pnpmListItem{one}
 	}
 
-	result := make([]dependencyInfo, 0)
+	result := make([]message.DependencyInfo, 0)
 	if len(list) == 0 {
 		return result, nil
 	}
@@ -227,7 +213,7 @@ func parseNodeDependencies(raw []byte) ([]dependencyInfo, error) {
 			continue
 		}
 		seen[trimmed] = true
-		result = append(result, dependencyInfo{
+		result = append(result, message.DependencyInfo{
 			Name:    trimmed,
 			Version: strings.TrimSpace(item.Version),
 		})
@@ -236,13 +222,13 @@ func parseNodeDependencies(raw []byte) ([]dependencyInfo, error) {
 	return result, nil
 }
 
-func parsePythonDependencies(raw []byte) ([]dependencyInfo, error) {
+func parsePythonDependencies(raw []byte) ([]message.DependencyInfo, error) {
 	var list []pipListItem
 	if err := json.Unmarshal(raw, &list); err != nil {
 		return nil, fmt.Errorf("解析 Python 依赖失败: %w", err)
 	}
 
-	result := make([]dependencyInfo, 0, len(list))
+	result := make([]message.DependencyInfo, 0, len(list))
 	for _, item := range list {
 		name := strings.TrimSpace(item.Name)
 		if name == "" {
@@ -253,7 +239,7 @@ func parsePythonDependencies(raw []byte) ([]dependencyInfo, error) {
 		case "pip", "setuptools", "wheel":
 			continue
 		}
-		result = append(result, dependencyInfo{
+		result = append(result, message.DependencyInfo{
 			Name:    name,
 			Version: strings.TrimSpace(item.Version),
 		})
@@ -262,7 +248,7 @@ func parsePythonDependencies(raw []byte) ([]dependencyInfo, error) {
 	return result, nil
 }
 
-func sortDependencyList(list []dependencyInfo) {
+func sortDependencyList(list []message.DependencyInfo) {
 	sort.Slice(list, func(i, j int) bool {
 		return strings.ToLower(list[i].Name) < strings.ToLower(list[j].Name)
 	})
@@ -418,7 +404,7 @@ func streamCommandLogs(c *gin.Context, cmd *exec.Cmd) error {
 		if writeErr != nil {
 			continue
 		}
-		if err := writeSSEEvent(c, "log", dependencyLogEvent{
+		if err := writeSSEEvent(c, "log", message.DependencyLogEvent{
 			Stream: line.stream,
 			Text:   line.text,
 		}); err != nil {

@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"callit/internal/admin/message"
 	"callit/internal/config"
 	"callit/internal/db"
 	"callit/internal/model"
@@ -31,12 +32,6 @@ const (
 	chatModeChat  chatMode = "chat"
 	chatModeAgent chatMode = "agent"
 )
-
-type chatStreamRequest struct {
-	Mode         string `json:"mode"`
-	Message      string `json:"message"`
-	HistoryLimit int    `json:"history_limit"`
-}
 
 type Handler struct {
 	store     *db.Store
@@ -136,7 +131,7 @@ func (h *Handler) Stream(c *gin.Context) {
 		return
 	}
 
-	var req chatStreamRequest
+	var req message.ChatStreamRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeError(c, http.StatusBadRequest, "请求体格式错误")
 		return

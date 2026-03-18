@@ -58,6 +58,7 @@ func main() {
 	localIP := resolveLocalIPv4()
 	log.Printf("服务启动: http://%s:%d", localIP, cfg.ServerPort)
 	log.Printf("Admin 服务入口: http://%s:%d%s", localIP, cfg.ServerPort, cfg.AdminPrefix)
+	log.Printf("AdminToken: %s", cfg.AdminToken)
 
 	group, gctx := errgroup.WithContext(context.Background())
 	group.Go(func() error {

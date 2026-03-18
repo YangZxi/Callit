@@ -7,21 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"callit/internal/admin/message"
 	"callit/internal/config"
 
 	"github.com/gin-gonic/gin"
 )
-
-type adminConfigItem struct {
-	Key    string  `json:"key"`
-	Value  string  `json:"value"`
-	Source string  `json:"source"`
-	DB     *string `json:"db,omitempty"`
-}
-
-type adminUpsertConfigPayload struct {
-	AppConfig map[string]*string `json:"app_config"`
-}
 
 func (s *Server) AdminGetConfigHandler(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -35,13 +25,13 @@ func (s *Server) AdminGetConfigHandler(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		keys := config.AppConfigKeys()
-		items := make([]adminConfigItem, 0, len(keys))
+		items := make([]message.AdminConfigItem, 0, len(keys))
 
 		s.configMu.RLock()
 		defer s.configMu.RUnlock()
 		for _, key := range keys {
 			val, _ := cfg.GetAppConfigValue(key)
-			item := adminConfigItem{
+			item := message.AdminConfigItem{
 				Key:    key,
 				Value:  val,
 				Source: "default",
@@ -61,7 +51,7 @@ func (s *Server) AdminGetConfigHandler(cfg *config.Config) gin.HandlerFunc {
 
 func (s *Server) AdminUpsertConfigHandler(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var req adminUpsertConfigPayload
+		var req message.AdminUpsertConfigRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			apiError(c, http.StatusBadRequest, "参数错误")
 			return

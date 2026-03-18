@@ -167,7 +167,7 @@ export default function Chatbox({ workerId, onFilesChanged }: ChatboxProps) {
     Array.from(selected).forEach((file) => {
       formData.append("files", file);
     });
-    await api.post<{ files: string[] }>(`/workers/${workerId}/files`, formData);
+    await api.post<{ files: string[] }>(`/workers/${workerId}/files/upload`, formData);
     await loadFiles();
     await onFilesChanged?.();
   }, [workerId, loadFiles, onFilesChanged]);

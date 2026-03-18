@@ -115,7 +115,7 @@ export default function WorkerDetailPage() {
 
   const fetchFileContent = useCallback(async (filename: string, options?: { hideToast?: boolean }) => {
     const target = encodeURIComponent(filename);
-    return api.get<FileContentResp>(`/workers/${id}/files/content?filename=${target}`, options);
+    return api.get<FileContentResp>(`/workers/${id}/files/${target}`, options);
   }, [id]);
 
   const loadFiles = useCallback(async (prefer?: string) => {
@@ -225,8 +225,10 @@ export default function WorkerDetailPage() {
     }
     setSaving(true);
     try {
-      const target = encodeURIComponent(selectedFile);
-      await api.put<{ files: string[] }>(`/workers/${id}/files/content?filename=${target}`, { content });
+      await api.post<{ files: string[] }>(`/workers/${id}/files/update`, {
+        filename: selectedFile,
+        content,
+      });
       addToast({ title: "保存成功", color: "success", variant: "flat", timeout: 1800 });
       await loadFiles(selectedFile);
     } finally {
@@ -241,10 +243,13 @@ export default function WorkerDetailPage() {
 
     setSaving(true);
     try {
-      const originTarget = encodeURIComponent(selectedFile);
-      await api.put<{ files: string[] }>(`/workers/${id}/files/content?filename=${originTarget}`, { content });
-      const diffTarget = encodeURIComponent(activeDiffFile);
-      await api.delete<{ ok: boolean }>(`/workers/${id}/files?filename=${diffTarget}`);
+      await api.post<{ files: string[] }>(`/workers/${id}/files/update`, {
+        filename: selectedFile,
+        content,
+      });
+      await api.post<{ ok: boolean }>(`/workers/${id}/files/delete`, {
+        filename: activeDiffFile,
+      });
       addToast({ title: "合并完成", color: "success", variant: "flat", timeout: 1800 });
       await loadFiles(selectedFile);
       await loadFileContent(selectedFile);
@@ -257,8 +262,9 @@ export default function WorkerDetailPage() {
 		if (!activeDiffFile || fileBusy) return;
 		setFileBusy(true);
 		try {
-			const diffTarget = encodeURIComponent(activeDiffFile);
-			await api.delete<{ ok: boolean }>(`/workers/${id}/files?filename=${diffTarget}`);
+			await api.post<{ ok: boolean }>(`/workers/${id}/files/delete`, {
+        filename: activeDiffFile,
+      });
 			addToast({ title: "已取消 Diff 合并", color: "warning", variant: "flat", timeout: 1800 });
 			await loadFiles(selectedFile || undefined);
 			if (selectedFile) {
@@ -305,8 +311,10 @@ export default function WorkerDetailPage() {
 
     setFileBusy(true);
     try {
-      const target = encodeURIComponent(clean);
-      await api.put<{ files: string[] }>(`/workers/${id}/files/content?filename=${target}`, { content: "" });
+      await api.post<{ files: string[] }>(`/workers/${id}/files/update`, {
+        filename: clean,
+        content: "",
+      });
       await loadFiles(clean);
       await loadFileContent(clean);
     } finally {
@@ -321,8 +329,9 @@ export default function WorkerDetailPage() {
 
     setFileBusy(true);
     try {
-      const target = encodeURIComponent(selectedFile);
-      await api.delete<{ ok: boolean }>(`/workers/${id}/files?filename=${target}`);
+      await api.post<{ ok: boolean }>(`/workers/${id}/files/delete`, {
+        filename: selectedFile,
+      });
       await loadFiles();
     } finally {
       setFileBusy(false);
@@ -361,7 +370,7 @@ export default function WorkerDetailPage() {
       Array.from(selected).forEach((file) => {
         formData.append("files", file);
       });
-      const data = await api.post<{ files: string[] }>(`/workers/${id}/files`, formData);
+      const data = await api.post<{ files: string[] }>(`/workers/${id}/files/upload`, formData);
       const uploadedFirst = data.files?.[0] || "";
       await loadFiles(uploadedFirst || undefined);
       if (uploadedFirst) {
@@ -378,7 +387,7 @@ export default function WorkerDetailPage() {
     setFnBusy(true);
     try {
       const nextPath = workerInfo.enabled ? "disable" : "enable";
-      const data = await api.post<WorkerItem>(`/workers/${id}/${nextPath}`);
+      const data = await api.post<WorkerItem>(`/workers/${nextPath}`, { id });
       setWorkerInfo(data);
     } finally {
       setFnBusy(false);
@@ -391,7 +400,7 @@ export default function WorkerDetailPage() {
     if (!ok) return;
     setFnBusy(true);
     try {
-      await api.delete<{ ok: boolean }>(`/workers/${id}`);
+      await api.post<{ ok: boolean }>("/workers/delete", { id });
       navigate("/workers", { replace: true });
     } finally {
       setFnBusy(false);

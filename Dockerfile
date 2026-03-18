@@ -39,8 +39,9 @@ COPY --from=frontend-builder --chown=callit:callit /app/pages/dist /app/public/a
 RUN mkdir -p /app/data/workers /app/data/temps \
     && chown -R callit:callit /app/data
 
+ENV GIN_MODE=release
 ENV DATA_DIR=/app/data
-ENV ROUTER_PORT=3100
+ENV ADMIN_PORT=3100
 
 EXPOSE 3100
 

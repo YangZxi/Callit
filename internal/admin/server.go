@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"callit/internal/admin/chat"
+	"callit/internal/admin/message"
 	"callit/internal/common"
 	"callit/internal/config"
 	"callit/internal/db"
@@ -49,27 +50,6 @@ type Server struct {
 
 	dependencyTaskMu      sync.Mutex
 	dependencyTaskRunning bool
-}
-
-type createWorkerRequest struct {
-	Name      string `json:"name"`
-	Runtime   string `json:"runtime"`
-	Route     string `json:"route"`
-	TimeoutMS int    `json:"timeout_ms"`
-	Enabled   *bool  `json:"enabled"`
-}
-
-type loginRequest struct {
-	Token string `json:"token"`
-}
-
-type saveFileRequest struct {
-	Content string `json:"content"`
-}
-
-type renameFileRequest struct {
-	Filename    string `json:"filename"`
-	NewFilename string `json:"new_filename"`
 }
 
 func writeAPIResponse(c *gin.Context, httpStatus int, code int, msg string, data any) {
@@ -113,20 +93,23 @@ func NewEngine(store *db.Store, reg *registry.Registry, cfg config.Config) *gin.
 		api.GET("/dependencies", s.listDependencies)
 		api.POST("/dependencies/manage", s.manageDependencies)
 
-		api.POST("/workers", s.createWorker)
-		api.PUT("/workers/:id", s.updateWorker)
 		api.GET("/workers", s.listWorkers)
 		api.GET("/workers/:id", s.getWorker)
+		api.POST("/workers/create", s.createWorker)
+		api.POST("/workers/update", s.updateWorker)
+		api.POST("/workers/delete", s.deleteWorker)
+		api.POST("/workers/enable", s.enableWorker)
+		api.POST("/workers/disable", s.disableWorker)
+
 		api.GET("/workers/:id/logs", s.listWorkerLogs)
-		api.DELETE("/workers/:id", s.deleteWorker)
-		api.POST("/workers/:id/files", s.uploadFiles)
+
 		api.GET("/workers/:id/files", s.listWorkerFiles)
-		api.GET("/workers/:id/files/content", s.getFileContent)
-		api.PUT("/workers/:id/files/content", s.saveFileContent)
-		api.DELETE("/workers/:id/files", s.deleteFile)
+		api.GET("/workers/:id/files/:filename", s.getFileContent)
+		api.POST("/workers/:id/files/upload", s.uploadFiles)
+		api.POST("/workers/:id/files/update", s.saveFileContent)
+		api.POST("/workers/:id/files/delete", s.deleteFile)
 		api.POST("/workers/:id/files/rename", s.renameFile)
-		api.POST("/workers/:id/enable", s.enableWorker)
-		api.POST("/workers/:id/disable", s.disableWorker)
+
 		api.GET("/workers/:id/chat/session", s.chatHandler.GetSession)
 		api.POST("/workers/:id/chat/stream", s.chatHandler.Stream)
 		api.POST("/workers/:id/chat/session/clear", s.chatHandler.ClearSession)
@@ -210,7 +193,7 @@ func (s *Server) authStatus(c *gin.Context) {
 }
 
 func (s *Server) login(c *gin.Context) {
-	var req loginRequest
+	var req message.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiError(c, http.StatusBadRequest, "请求体格式错误")
 		return
@@ -233,7 +216,7 @@ func (s *Server) logout(c *gin.Context) {
 }
 
 func (s *Server) createWorker(c *gin.Context) {
-	var req createWorkerRequest
+	var req message.CreateWorkerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiError(c, http.StatusBadRequest, "请求体格式错误")
 		return
@@ -291,7 +274,16 @@ func (s *Server) createWorker(c *gin.Context) {
 }
 
 func (s *Server) updateWorker(c *gin.Context) {
-	id := strings.TrimSpace(c.Param("id"))
+	var req struct {
+		message.WorkerIDRequest
+		message.CreateWorkerRequest
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiError(c, http.StatusBadRequest, "请求体格式错误")
+		return
+	}
+
+	id := strings.TrimSpace(req.ID)
 	if id == "" {
 		apiError(c, http.StatusBadRequest, "id 不能为空")
 		return
@@ -304,12 +296,6 @@ func (s *Server) updateWorker(c *gin.Context) {
 			return
 		}
 		apiError(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	var req createWorkerRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		apiError(c, http.StatusBadRequest, "请求体格式错误")
 		return
 	}
 
@@ -446,8 +432,14 @@ func (s *Server) listWorkerLogs(c *gin.Context) {
 }
 
 func (s *Server) deleteWorker(c *gin.Context) {
-	id := c.Param("id")
-	if strings.TrimSpace(id) == "" {
+	var req message.WorkerIDRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiError(c, http.StatusBadRequest, "请求体格式错误")
+		return
+	}
+
+	id := strings.TrimSpace(req.ID)
+	if id == "" {
 		apiError(c, http.StatusBadRequest, "id 不能为空")
 		return
 	}
@@ -554,7 +546,7 @@ func (s *Server) listWorkerFiles(c *gin.Context) {
 
 func (s *Server) getFileContent(c *gin.Context) {
 	id := c.Param("id")
-	filename := strings.TrimSpace(c.Query("filename"))
+	filename := strings.TrimSpace(c.Param("filename"))
 	if filename == "" {
 		apiError(c, http.StatusBadRequest, "filename 不能为空")
 		return
@@ -612,7 +604,13 @@ func (s *Server) getFileContent(c *gin.Context) {
 
 func (s *Server) saveFileContent(c *gin.Context) {
 	id := c.Param("id")
-	filename := strings.TrimSpace(c.Query("filename"))
+	var req message.SaveFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiError(c, http.StatusBadRequest, "请求体格式错误")
+		return
+	}
+
+	filename := strings.TrimSpace(req.Filename)
 	if filename == "" {
 		apiError(c, http.StatusBadRequest, "filename 不能为空")
 		return
@@ -629,12 +627,6 @@ func (s *Server) saveFileContent(c *gin.Context) {
 			return
 		}
 		apiError(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	var req saveFileRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		apiError(c, http.StatusBadRequest, "请求体格式错误")
 		return
 	}
 
@@ -672,7 +664,13 @@ func (s *Server) saveFileContent(c *gin.Context) {
 
 func (s *Server) deleteFile(c *gin.Context) {
 	id := c.Param("id")
-	filename := strings.TrimSpace(c.Query("filename"))
+	var req message.DeleteFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiError(c, http.StatusBadRequest, "请求体格式错误")
+		return
+	}
+
+	filename := strings.TrimSpace(req.Filename)
 	if filename == "" {
 		apiError(c, http.StatusBadRequest, "filename 不能为空")
 		return
@@ -718,7 +716,7 @@ func (s *Server) deleteFile(c *gin.Context) {
 func (s *Server) renameFile(c *gin.Context) {
 	id := c.Param("id")
 
-	var req renameFileRequest
+	var req message.RenameFileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiError(c, http.StatusBadRequest, "请求体格式错误")
 		return
@@ -788,7 +786,18 @@ func (s *Server) disableWorker(c *gin.Context) {
 }
 
 func (s *Server) setWorkerEnabled(c *gin.Context, enabled bool) {
-	id := c.Param("id")
+	var req message.WorkerIDRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiError(c, http.StatusBadRequest, "请求体格式错误")
+		return
+	}
+
+	id := strings.TrimSpace(req.ID)
+	if id == "" {
+		apiError(c, http.StatusBadRequest, "id 不能为空")
+		return
+	}
+
 	updated, err := s.store.Worker.SetEnabled(c.Request.Context(), id, enabled)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
