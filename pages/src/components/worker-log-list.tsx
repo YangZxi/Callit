@@ -1,7 +1,7 @@
 import { Button, Pagination } from "@heroui/react";
 
 export type WorkerLogItem = {
-  id: string;
+  id: number;
   worker_id: string;
   request_id: string;
   status: number;
@@ -17,12 +17,12 @@ export type WorkerLogItem = {
 type WorkerLogListProps = {
   loading: boolean;
   items: WorkerLogItem[];
-  expandedIds: Set<string>;
+  expandedIds: Set<number>;
   page: number;
   pageSize: number;
   total: number;
   totalPages: number;
-  onToggle: (id: string) => void;
+  onToggle: (id: number) => void;
   onPageChange: (page: number) => void;
 };
 

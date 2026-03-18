@@ -9,8 +9,8 @@ CREATE TABLE worker (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE execution_logs (
-    id TEXT PRIMARY KEY,
+CREATE TABLE worker_run_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     worker_id TEXT NOT NULL,
     request_id TEXT NOT NULL,
     status INTEGER,
@@ -23,8 +23,8 @@ CREATE TABLE execution_logs (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_execution_logs_worker_created
-ON execution_logs(worker_id, created_at);
+CREATE INDEX idx_worker_run_log_worker_created
+ON worker_run_log(worker_id, created_at);
 
-CREATE INDEX idx_execution_logs_request_id
-ON execution_logs(request_id);
+CREATE INDEX idx_worker_run_log_request_id
+ON worker_run_log(request_id);

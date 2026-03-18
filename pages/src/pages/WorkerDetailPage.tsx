@@ -87,7 +87,7 @@ export default function WorkerDetailPage() {
   const [logPage, setLogPage] = useState(1);
   const [logTotal, setLogTotal] = useState(0);
   const [logItems, setLogItems] = useState<WorkerLogItem[]>([]);
-  const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set());
+  const [expandedLogIds, setExpandedLogIds] = useState<Set<number>>(new Set());
 
   const selectedKeys = useMemo(() => (selectedFile ? new Set<string>([selectedFile]) : new Set<string>()), [selectedFile]);
   const defaultRunUrl = useMemo(() => {
@@ -404,7 +404,7 @@ export default function WorkerDetailPage() {
     setLogModalOpen(true);
   };
 
-  const toggleLogDetails = (logID: string) => {
+  const toggleLogDetails = (logID: number) => {
     setExpandedLogIds((prev) => {
       const next = new Set(prev);
       if (next.has(logID)) {

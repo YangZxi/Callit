@@ -24,7 +24,6 @@ import (
 	"callit/internal/requestparse"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 // Server 表示 Router 服务。
@@ -376,7 +375,6 @@ func (s *Server) recordRunningLog(workerID string, requestID string, input model
 	}
 
 	s.insertWorkerLogAsync(model.WorkerLog{
-		ID:         uuid.NewString(),
 		WorkerID:   workerID,
 		RequestID:  requestID,
 		Status:     statusForLog,
