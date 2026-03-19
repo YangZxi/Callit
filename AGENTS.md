@@ -24,15 +24,13 @@
 
 ```text
 cmd/main.go                 # 程序入口，启动 Router/Admin 双服务
-internal/admin              # Admin API（鉴权、Worker 管理、文件管理）
-internal/router             # Router 动态执行入口
-internal/executor           # 脚本执行与超时控制
-internal/requestparse       # JSON/form/multipart 解析
-internal/registry           # 路由内存索引
-internal/db                 # SQLite 持久化
-internal/model              # 领域模型（包含 FuncInput/FuncRequest/FuncOutput）
-pages/src                   # Admin 服务的前端源码（Settings/Workers/WorkerInfo/Dependencies）
-public                      # 前端构建产物（由后端直接托管）
+internal/admin              # admin 服务，负责项目所有管理功能
+internal/router             # worker 的 http 路由定义
+internal/executor           # http、cron 触发调用 worker 时的执行器
+internal/common             # 公共通用模块，JSON/form/multipart 解析
+internal/db                 # 数据库层，使用 ORM 提供操作数据的接口
+internal/model              # 数据库实体与 Go 实体
+pages/                      # 前端源代码
 migrations/001_init.sql     # 建表 SQL
 .github/workflows           # CI（镜像构建推送）
 ```
@@ -138,6 +136,7 @@ docker compose up --build
 3. 关键流程允许添加简洁中文注释，避免注释噪音。
 4. 新增路径、包名、模型名时，必须全局搜索引用并一次性更新。
 5. 禁止使用无意义命名和难以理解的随意缩写；允许使用行业内约定俗成、语义明确的常见缩写（如 `cfg`、`reg`、`dao`），但所有变量名、函数名、方法名都必须名如其意，看到名称就能理解其职责和用途。
+6. 避免做不需要的兜底开发，一般情况下，你只需要考虑当下就行，不必考虑到未来的各种参数值不合法问题。在不明确时，询问我是否需要进行兜底。
 
 ## 8. 变更流程（代理执行）
 

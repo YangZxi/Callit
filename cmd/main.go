@@ -16,8 +16,9 @@ import (
 
 	"callit/internal/admin"
 	"callit/internal/config"
+	"callit/internal/cron"
 	"callit/internal/db"
-	"callit/internal/registry"
+	"callit/internal/executor"
 	"callit/internal/router"
 
 	"golang.org/x/sync/errgroup"
@@ -38,15 +39,21 @@ func main() {
 		log.Fatalf("加载应用配置失败: %v", err)
 	}
 
-	reg := registry.New()
+	reg := router.New()
 	funcs, err := store.Worker.ListEnabled(context.Background())
 	if err != nil {
 		log.Fatalf("加载启用函数失败: %v", err)
 	}
 	reg.Reload(funcs)
 
-	routerEngine := router.NewEngine(store, reg, cfg.DataDir)
-	adminEngine := admin.NewEngine(store, reg, cfg)
+	invoker := executor.NewService(store, cfg.DataDir)
+	cronManager := cron.NewManager(store, invoker, time.Local)
+	if err := cronManager.Start(context.Background()); err != nil {
+		log.Fatalf("启动 cron 调度器失败: %v", err)
+	}
+
+	routerEngine := router.NewEngine(store, reg, cfg.DataDir, invoker)
+	adminEngine := admin.NewEngine(store, reg, cronManager, cfg)
 	handler := serverRouteHandler(adminEngine, routerEngine, cfg.AdminPrefix)
 
 	srv := &http.Server{

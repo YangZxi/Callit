@@ -54,3 +54,19 @@ type ChatStreamRequest struct {
 	Message      string `json:"message"`
 	HistoryLimit int    `json:"history_limit"`
 }
+
+// CreateCronTaskRequest 表示创建 cron_task 的请求体。
+type CreateCronTaskRequest struct {
+	Cron string `json:"cron"`
+}
+
+// UpdateCronTaskRequest 表示更新 cron_task 的请求体。
+type UpdateCronTaskRequest struct {
+	ID   int64  `json:"id,string"`
+	Cron string `json:"cron"`
+}
+
+// CronTaskIDRequest 表示仅包含 cron_task 主键 ID 的请求体。
+type CronTaskIDRequest struct {
+	ID int64 `json:"id,string"`
+}

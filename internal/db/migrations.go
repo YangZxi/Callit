@@ -7,9 +7,13 @@ import (
 )
 
 func runMigrations(db *gorm.DB) error {
-	return db.AutoMigrate(
+	if err := db.AutoMigrate(
 		&model.Worker{},
 		&model.WorkerLog{},
+		&model.CronTask{},
 		&model.AppConfigEntry{},
-	)
+	); err != nil {
+		return err
+	}
+	return nil
 }

@@ -22,10 +22,12 @@ import (
 	"callit/internal/admin/chat"
 	"callit/internal/admin/message"
 	"callit/internal/common"
+	"callit/internal/common/snowflake"
 	"callit/internal/config"
+	"callit/internal/cron"
 	"callit/internal/db"
 	"callit/internal/model"
-	"callit/internal/registry"
+	"callit/internal/router"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -41,12 +43,14 @@ const (
 
 // Server 表示 Admin 服务。
 type Server struct {
-	store       *db.Store
-	reg         *registry.Registry
-	dataDir     string
-	adminToken  string
-	chatHandler *chat.Handler
-	configMu    sync.RWMutex
+	store        *db.Store
+	reg          *router.Registry
+	cronReloader interface{ Reload(context.Context) error }
+	idGenerator  *snowflake.Generator
+	dataDir      string
+	adminToken   string
+	chatHandler  *chat.Handler
+	configMu     sync.RWMutex
 
 	dependencyTaskMu      sync.Mutex
 	dependencyTaskRunning bool
@@ -69,13 +73,15 @@ func apiError(c *gin.Context, httpStatus int, msg string) {
 }
 
 // NewEngine 创建 Admin Gin 引擎。
-func NewEngine(store *db.Store, reg *registry.Registry, cfg config.Config) *gin.Engine {
+func NewEngine(store *db.Store, reg *router.Registry, cronReloader interface{ Reload(context.Context) error }, cfg config.Config) *gin.Engine {
 	s := &Server{
-		store:       store,
-		reg:         reg,
-		dataDir:     cfg.DataDir,
-		adminToken:  cfg.AdminToken,
-		chatHandler: chat.NewHandler(store, cfg.DataDir, cfg.AppConfig),
+		store:        store,
+		reg:          reg,
+		cronReloader: cronReloader,
+		idGenerator:  snowflake.NewGenerator(1),
+		dataDir:      cfg.DataDir,
+		adminToken:   cfg.AdminToken,
+		chatHandler:  chat.NewHandler(store, cfg.DataDir, cfg.AppConfig),
 	}
 	e := gin.New()
 	e.Use(gin.Recovery(), common.RequestIDMiddleware())
@@ -102,6 +108,10 @@ func NewEngine(store *db.Store, reg *registry.Registry, cfg config.Config) *gin.
 		api.POST("/workers/disable", s.disableWorker)
 
 		api.GET("/workers/:id/logs", s.listWorkerLogs)
+		api.GET("/workers/:id/crons", s.listWorkerCrons)
+		api.POST("/workers/:id/crons/create", s.createWorkerCron)
+		api.POST("/workers/:id/crons/update", s.updateWorkerCron)
+		api.POST("/workers/:id/crons/delete", s.deleteWorkerCron)
 
 		api.GET("/workers/:id/files", s.listWorkerFiles)
 		api.GET("/workers/:id/files/:filename", s.getFileContent)
@@ -266,7 +276,7 @@ func (s *Server) createWorker(c *gin.Context) {
 		return
 	}
 
-	if err := s.reloadRegistry(c.Request.Context()); err != nil {
+	if err := s.reloadWorkersState(c.Request.Context()); err != nil {
 		apiError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -343,7 +353,7 @@ func (s *Server) updateWorker(c *gin.Context) {
 		return
 	}
 
-	if err := s.reloadRegistry(c.Request.Context()); err != nil {
+	if err := s.reloadWorkersState(c.Request.Context()); err != nil {
 		apiError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -451,13 +461,17 @@ func (s *Server) deleteWorker(c *gin.Context) {
 		apiError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if err := s.store.CronTask.DeleteByWorkerID(c.Request.Context(), id); err != nil {
+		apiError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	functionDir := filepath.Join(s.dataDir, "workers", id)
 	if err := os.RemoveAll(functionDir); err != nil {
 		apiError(c, http.StatusInternalServerError, fmt.Sprintf("删除函数目录失败: %v", err))
 		return
 	}
-	if err := s.reloadRegistry(c.Request.Context()); err != nil {
+	if err := s.reloadWorkersState(c.Request.Context()); err != nil {
 		apiError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -807,11 +821,23 @@ func (s *Server) setWorkerEnabled(c *gin.Context, enabled bool) {
 		apiError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := s.reloadRegistry(c.Request.Context()); err != nil {
+	if err := s.reloadWorkersState(c.Request.Context()); err != nil {
 		apiError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	apiSuccess(c, updated)
+}
+
+func (s *Server) reloadWorkersState(ctx context.Context) error {
+	if err := s.reloadRegistry(ctx); err != nil {
+		return err
+	}
+	if s.cronReloader != nil {
+		if err := s.cronReloader.Reload(ctx); err != nil {
+			return fmt.Errorf("重载 cron 调度器失败: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *Server) reloadRegistry(ctx context.Context) error {
@@ -823,6 +849,157 @@ func (s *Server) reloadRegistry(ctx context.Context) error {
 	}
 	s.reg.Reload(funcs)
 	return nil
+}
+
+func (s *Server) listWorkerCrons(c *gin.Context) {
+	workerID, ok := s.requireWorker(c)
+	if !ok {
+		return
+	}
+
+	tasks, err := s.store.CronTask.ListByWorkerID(c.Request.Context(), workerID)
+	if err != nil {
+		apiError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	apiSuccess(c, tasks)
+}
+
+func (s *Server) createWorkerCron(c *gin.Context) {
+	workerID, ok := s.requireWorker(c)
+	if !ok {
+		return
+	}
+
+	var req message.CreateCronTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiError(c, http.StatusBadRequest, "请求体格式错误")
+		return
+	}
+
+	cronExpr := strings.TrimSpace(req.Cron)
+	if err := s.validateCronExpression(cronExpr); err != nil {
+		apiError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	taskID, err := s.idGenerator.NextID()
+	if err != nil {
+		apiError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	created, err := s.store.CronTask.Create(c.Request.Context(), model.CronTask{
+		ID:       taskID,
+		WorkerID: workerID,
+		Cron:     cronExpr,
+	})
+	if err != nil {
+		apiError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := s.reloadWorkersState(c.Request.Context()); err != nil {
+		apiError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	apiSuccess(c, created)
+}
+
+func (s *Server) updateWorkerCron(c *gin.Context) {
+	workerID, ok := s.requireWorker(c)
+	if !ok {
+		return
+	}
+
+	var req message.UpdateCronTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiError(c, http.StatusBadRequest, "请求体格式错误")
+		return
+	}
+	if req.ID <= 0 {
+		apiError(c, http.StatusBadRequest, "id 不能为空")
+		return
+	}
+
+	cronExpr := strings.TrimSpace(req.Cron)
+	if err := s.validateCronExpression(cronExpr); err != nil {
+		apiError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	updated, err := s.store.CronTask.Update(c.Request.Context(), model.CronTask{
+		ID:       req.ID,
+		WorkerID: workerID,
+		Cron:     cronExpr,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			apiError(c, http.StatusNotFound, "cron_task 不存在")
+			return
+		}
+		apiError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := s.reloadWorkersState(c.Request.Context()); err != nil {
+		apiError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	apiSuccess(c, updated)
+}
+
+func (s *Server) deleteWorkerCron(c *gin.Context) {
+	workerID, ok := s.requireWorker(c)
+	if !ok {
+		return
+	}
+
+	var req message.CronTaskIDRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiError(c, http.StatusBadRequest, "请求体格式错误")
+		return
+	}
+	if req.ID <= 0 {
+		apiError(c, http.StatusBadRequest, "id 不能为空")
+		return
+	}
+
+	if err := s.store.CronTask.Delete(c.Request.Context(), req.ID, workerID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			apiError(c, http.StatusNotFound, "cron_task 不存在")
+			return
+		}
+		apiError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := s.reloadWorkersState(c.Request.Context()); err != nil {
+		apiError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	apiSuccess(c, gin.H{"ok": true})
+}
+
+func (s *Server) requireWorker(c *gin.Context) (string, bool) {
+	workerID := strings.TrimSpace(c.Param("id"))
+	if workerID == "" {
+		apiError(c, http.StatusBadRequest, "id 不能为空")
+		return "", false
+	}
+	if _, err := s.store.Worker.GetByID(c.Request.Context(), workerID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			apiError(c, http.StatusNotFound, "函数不存在")
+			return "", false
+		}
+		apiError(c, http.StatusInternalServerError, err.Error())
+		return "", false
+	}
+	return workerID, true
+}
+
+func (s *Server) validateCronExpression(expr string) error {
+	if strings.TrimSpace(expr) == "" {
+		return fmt.Errorf("cron 不能为空")
+	}
+	return cron.ValidateExpression(expr)
 }
 
 func validateWorker(worker model.Worker) error {

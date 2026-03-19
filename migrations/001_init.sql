@@ -13,6 +13,7 @@ CREATE TABLE worker_run_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     worker_id TEXT NOT NULL,
     request_id TEXT NOT NULL,
+    trigger TEXT NOT NULL DEFAULT 'http',
     status INTEGER,
     stdin TEXT,
     stdout TEXT,
@@ -28,3 +29,14 @@ ON worker_run_log(worker_id, created_at);
 
 CREATE INDEX idx_worker_run_log_request_id
 ON worker_run_log(request_id);
+
+CREATE TABLE cron_task (
+    id INTEGER PRIMARY KEY,
+    cron TEXT NOT NULL,
+    worker_id TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_cron_task_worker_id
+ON cron_task(worker_id);

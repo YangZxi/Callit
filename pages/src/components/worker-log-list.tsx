@@ -1,9 +1,10 @@
-import { Button, Pagination } from "@heroui/react";
+import { Button, Chip, Pagination } from "@heroui/react";
 
 export type WorkerLogItem = {
-  id: number;
+  id: string;
   worker_id: string;
   request_id: string;
+  trigger?: string;
   status: number;
   stdin: string;
   stdout: string;
@@ -17,12 +18,12 @@ export type WorkerLogItem = {
 type WorkerLogListProps = {
   loading: boolean;
   items: WorkerLogItem[];
-  expandedIds: Set<number>;
+  expandedIds: Set<string>;
   page: number;
   pageSize: number;
   total: number;
   totalPages: number;
-  onToggle: (id: number) => void;
+  onToggle: (id: string) => void;
   onPageChange: (page: number) => void;
 };
 
@@ -42,6 +43,27 @@ function formatResultForDisplay(raw: string): string {
   } catch {
     return raw;
   }
+}
+
+function normalizeTrigger(trigger?: string): "http" | "cron" {
+  return trigger === "cron" ? "cron" : "http";
+}
+
+function extractRequestURI(raw: string): string {
+  if (!raw) return "";
+  try {
+    const parsed = JSON.parse(raw) as { request?: { uri?: unknown } };
+    return typeof parsed?.request?.uri === "string" ? parsed.request.uri : "";
+  } catch {
+    return "";
+  }
+}
+
+function renderRunStatus(error: string) {
+  if (error) {
+    return <Chip color="danger" size="sm" variant="flat">Error</Chip>;
+  }
+  return <Chip color="success" size="sm" variant="flat">Success</Chip>;
 }
 
 export default function WorkerLogList({
@@ -73,14 +95,23 @@ export default function WorkerLogList({
             const expanded = expandedIds.has(item.id);
             const formattedResult = formatResultForDisplay(item.result);
             const formattedStdin = formatResultForDisplay(item.stdin);
+            const trigger = normalizeTrigger(item.trigger);
+            const requestURI = trigger === "http" ? extractRequestURI(item.stdin) : "";
             return (
               <div key={item.id} className="rounded-lg border border-default-200 p-3">
                 <div className="flex items-start justify-between gap-3" onClick={() => onToggle(item.id)}>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-default-800">request_id: {item.request_id}</p>
-                    <p className="truncate text-xs text-default-500">
-                      {formatLogTime(item.created_at)} · 状态 {item.status} · 耗时 {item.duration_ms}ms
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-default-500">
+                      <span>触发类型 {trigger === "http" ? "HTTP" : "Cron"}</span>
+                      {trigger === "http" && requestURI ? <span className="max-w-[240px] truncate">URI {requestURI}</span> : null}
+                      {trigger === "http" ? <span>HTTP Status {item.status}</span> : null}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-default-500">
+                      <span>{formatLogTime(item.created_at)}</span>
+                      {renderRunStatus(item.error)}
+                      <span>耗时 {item.duration_ms}ms</span>
+                    </div>
                   </div>
                   <Button color="default" size="sm" variant="flat" onPress={() => onToggle(item.id)}>
                     {expanded ? "收起详情" : "展开详情"}

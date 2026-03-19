@@ -17,6 +17,7 @@ type Store struct {
 	gormDB    *gorm.DB
 	Worker    *WorkerDAO
 	WorkerLog *WorkerLogDAO
+	CronTask  *CronTaskDAO
 	AppConfig *AppConfigDAO
 }
 
@@ -42,6 +43,7 @@ func Open(dbPath string) (*Store, error) {
 	store := &Store{gormDB: gormDB}
 	store.Worker = &WorkerDAO{db: gormDB}
 	store.WorkerLog = &WorkerLogDAO{db: gormDB}
+	store.CronTask = &CronTaskDAO{db: gormDB}
 	store.AppConfig = &AppConfigDAO{db: gormDB}
 	return store, nil
 }

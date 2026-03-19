@@ -2,7 +2,6 @@ package router
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
@@ -17,11 +16,10 @@ import (
 	"time"
 
 	"callit/internal/common"
+	"callit/internal/common/requestparse"
 	"callit/internal/db"
 	"callit/internal/executor"
 	"callit/internal/model"
-	"callit/internal/registry"
-	"callit/internal/requestparse"
 
 	"github.com/gin-gonic/gin"
 )
@@ -29,13 +27,14 @@ import (
 // Server 表示 Router 服务。
 type Server struct {
 	store   *db.Store
-	reg     *registry.Registry
+	reg     *Registry
 	dataDir string
+	invoker *executor.Service
 }
 
 // NewEngine 创建 Router Gin 引擎。
-func NewEngine(store *db.Store, reg *registry.Registry, dataDir string) *gin.Engine {
-	s := &Server{store: store, reg: reg, dataDir: dataDir}
+func NewEngine(store *db.Store, reg *Registry, dataDir string, invoker *executor.Service) *gin.Engine {
+	s := &Server{store: store, reg: reg, dataDir: dataDir, invoker: invoker}
 	e := gin.New()
 	e.Use(gin.Recovery(), common.RequestIDMiddleware())
 	e.GET("/", func(c *gin.Context) {
@@ -93,6 +92,7 @@ func (s *Server) handleInvoke(c *gin.Context) {
 		},
 		Event: model.WorkerEvent{
 			RequestID: requestID,
+			Trigger:   model.WorkerTriggerHTTP,
 			Runtime:   worker.Runtime,
 			WorkerID:  worker.ID,
 			Route:     worker.Route,
@@ -103,8 +103,7 @@ func (s *Server) handleInvoke(c *gin.Context) {
 	defer cancel()
 
 	workerDir := filepath.Join(s.dataDir, "workers", worker.ID)
-	execResult := executor.Run(timeoutCtx, worker, workerDir, input)
-	s.recordRunningLog(worker.ID, requestID, input, execResult)
+	execResult := s.invoker.Execute(timeoutCtx, worker, requestID, input, true)
 
 	if execResult.TimedOut {
 		common.ErrorResponse(c, http.StatusGatewayTimeout, "execution timeout")
@@ -333,56 +332,4 @@ func buildQueryParams(requestURL *url.URL) map[string]string {
 		params[key] = vals[len(vals)-1]
 	}
 	return params
-}
-
-func (s *Server) insertWorkerLogAsync(entry model.WorkerLog) {
-	go func(logEntry model.WorkerLog) {
-		persistCtx, persistCancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer persistCancel()
-
-		if err := s.store.WorkerLog.Insert(persistCtx, logEntry); err != nil {
-			log.Printf("写入函数日志失败: %v", err)
-		}
-	}(entry)
-}
-
-// recordRunningLog 统一整理执行结果并异步记录 Worker 运行日志。
-func (s *Server) recordRunningLog(workerID string, requestID string, input model.WorkerInput, execResult executor.ExecuteResult) {
-	statusForLog := execResult.Status
-	if statusForLog == 0 {
-		if execResult.TimedOut {
-			statusForLog = http.StatusGatewayTimeout
-		} else {
-			statusForLog = http.StatusInternalServerError
-		}
-	}
-
-	errMsg := ""
-	if execResult.Err != nil {
-		if execResult.TimedOut {
-			errMsg = "timeout"
-		} else {
-			errMsg = execResult.Err.Error()
-		}
-	}
-
-	stdinText := ""
-	payload, err := json.Marshal(input)
-	if err != nil {
-		log.Printf("序列化 WorkerInput 失败: %v", err)
-	} else {
-		stdinText = string(payload)
-	}
-
-	s.insertWorkerLogAsync(model.WorkerLog{
-		WorkerID:   workerID,
-		RequestID:  requestID,
-		Status:     statusForLog,
-		Stdin:      stdinText,
-		Stdout:     execResult.Stdout,
-		Stderr:     execResult.Stderr,
-		Result:     execResult.Result,
-		Error:      errMsg,
-		DurationMS: execResult.DurationMS,
-	})
 }

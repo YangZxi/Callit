@@ -96,7 +96,7 @@ func Load() Config {
 func nomralizeConfig(cfg *Config) {
 	if cfg.AdminToken == "" {
 		cfg.AdminToken = uuid.New().String()
-		fmt.Printf("系统已随机生成 AdminToken，如需固定 Token，请设置环境变量 ADMIN_TOKEN\n", cfg.AdminToken)
+		fmt.Printf("系统已随机生成 AdminToken，如需固定 Token，请设置环境变量 ADMIN_TOKEN\n")
 	}
 
 	if cfg.AdminPrefix == "" {

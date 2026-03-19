@@ -21,7 +21,16 @@ func (dao *WorkerDAO) Create(ctx context.Context, worker model.Worker) (model.Wo
 	now := time.Now().UTC()
 	worker.CreatedAt = now
 	worker.UpdatedAt = now
-	if err := dao.db.WithContext(ctx).Create(&worker).Error; err != nil {
+	if err := dao.db.WithContext(ctx).Model(&model.Worker{}).Create(map[string]any{
+		"id":         worker.ID,
+		"name":       worker.Name,
+		"runtime":    worker.Runtime,
+		"route":      worker.Route,
+		"timeout_ms": worker.TimeoutMS,
+		"enabled":    worker.Enabled,
+		"created_at": worker.CreatedAt,
+		"updated_at": worker.UpdatedAt,
+	}).Error; err != nil {
 		return model.Worker{}, err
 	}
 	return worker, nil

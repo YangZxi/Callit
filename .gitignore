@@ -11,3 +11,6 @@ dist/
 
 # Go
 coverage.out
+
+# other
+.work_note.md

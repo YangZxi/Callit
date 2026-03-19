@@ -17,6 +17,9 @@ func (dao *WorkerLogDAO) Insert(ctx context.Context, log model.WorkerLog) error 
 	if log.CreatedAt.IsZero() {
 		log.CreatedAt = time.Now().UTC()
 	}
+	if log.Trigger == "" {
+		log.Trigger = model.WorkerTriggerHTTP
+	}
 	return dao.db.WithContext(ctx).Create(&log).Error
 }
 

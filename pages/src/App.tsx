@@ -35,7 +35,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <section className="py-10 text-sm text-default-500">正在校验登录状态...</section>;
   }
   if (status === "guest") {
-    return <Navigate replace to={`/${BASE_PREFIX}`} />;
+    return <Navigate replace to={BASE_PREFIX} />;
   }
   return children;
 }

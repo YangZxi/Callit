@@ -1,4 +1,4 @@
-package registry
+package router
 
 import (
 	"testing"

@@ -1,9 +1,10 @@
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from "react";
-import { Button, Chip, Input, Select, SelectItem, Switch, addToast } from "@heroui/react";
+import { Button, Chip, Input, Modal, ModalBody, ModalContent, ModalHeader, Select, SelectItem, Switch, addToast } from "@heroui/react";
 import { useNavigate } from "react-router-dom";
 
 import api from "@/lib/api";
 import XModal from "@/components/modal";
+import WorkerCronList from "@/components/worker-cron-list";
 
 type WorkerItem = {
   id: string;
@@ -56,6 +57,8 @@ export default function WorkerListPage() {
   const [actioningID, setActioningID] = useState<string>("");
   const [workers, setWorkers] = useState<WorkerItem[]>([]);
   const [form, setForm] = useState<CreateWorkerForm>(initialForm);
+  const [cronModalOpen, setCronModalOpen] = useState(false);
+  const [cronWorker, setCronWorker] = useState<WorkerItem | null>(null);
 
   const empty = useMemo(() => !listLoading && workers.length === 0, [listLoading, workers.length]);
 
@@ -143,6 +146,11 @@ export default function WorkerListPage() {
     setIsOpen(true);
   };
 
+  const openCronModal = (item: WorkerItem) => {
+    setCronWorker(item);
+    setCronModalOpen(true);
+  };
+
   const setEnabled = async (item: WorkerItem, enabled: boolean) => {
     if (actioningID) return;
     setActioningID(item.id);
@@ -217,6 +225,14 @@ export default function WorkerListPage() {
                 <p className="text-xs text-default-400">UUID: {item.id}</p>
               </div>
               <div className="flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
+                <Button
+                  color="secondary"
+                  size="sm"
+                  variant="flat"
+                  onPress={() => openCronModal(item)}
+                >
+                  Cron
+                </Button>
                 <Button
                   color="primary"
                   isLoading={actioningID === item.id}
@@ -309,6 +325,34 @@ export default function WorkerListPage() {
           <button className="hidden" type="submit">创建</button>
         </form>
       </XModal>
+
+      <Modal
+        hideCloseButton={false}
+        isDismissable={false}
+        isKeyboardDismissDisabled
+        isOpen={cronModalOpen}
+        scrollBehavior="inside"
+        size="sm"
+        onOpenChange={(open) => {
+          if (!open) {
+            setCronModalOpen(false);
+            setCronWorker(null);
+          }
+        }}
+      >
+        <ModalContent>
+          {() => (
+            <>
+              <ModalHeader className="flex flex-col gap-1 text-default-900 dark:text-default-700">
+                {cronWorker ? `${cronWorker.name} 的 Cron` : "Cron"}
+              </ModalHeader>
+              <ModalBody className="pb-5">
+                {cronWorker ? <WorkerCronList isOpen={cronModalOpen} workerId={cronWorker.id} /> : null}
+              </ModalBody>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
     </section>
   );
 }

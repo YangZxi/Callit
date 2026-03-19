@@ -1,4 +1,4 @@
-package registry
+package router
 
 import (
 	"net/url"
@@ -65,7 +65,6 @@ func (r *Registry) Reload(functions []model.Worker) {
 		routeKey := normalizeRoutePath(worker.Route)
 		if strings.HasSuffix(worker.Route, "/*") {
 			target = nextWildcard
-			// 只保留前缀部分，示例: /tea/* => /tea
 			routeKey = normalizeRoutePath(strings.TrimSuffix(worker.Route, "/*"))
 		}
 		target[routeKey] = worker
@@ -78,7 +77,6 @@ func (r *Registry) Reload(functions []model.Worker) {
 			worker: worker,
 		})
 	}
-	// 前缀越长越优先，避免短前缀吞掉更具体的路由。
 	sort.Slice(wildcards, func(i, j int) bool {
 		return len(wildcards[i].prefix) > len(wildcards[j].prefix)
 	})
