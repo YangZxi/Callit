@@ -86,6 +86,7 @@ func (c *openAIClient) StreamChat(ctx context.Context, messages []aiMessage, onD
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("User-Agent", "Callit")
 
 	resp, err := c.client.Do(req)
 	if err != nil {
