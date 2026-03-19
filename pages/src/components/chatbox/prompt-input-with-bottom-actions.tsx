@@ -37,9 +37,9 @@ export default function PromptInputWithBottomActions(props: Props) {
     const cleanPrompt = prompt.trim();
     const mergedPrompt = refs.length > 0 ? `${refs.join("\n")}\n\n${cleanPrompt}`.trim() : cleanPrompt;
     if (!mergedPrompt) return;
-    await onSend(mergedPrompt);
     setPrompt("");
     setSelectedKeys(new Set<string>());
+    await onSend(mergedPrompt);
   };
 
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
