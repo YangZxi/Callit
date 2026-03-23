@@ -85,10 +85,11 @@ docker compose up --build
 - multipart 上传文件在请求结束后必须清理（`defer RemoveAll`）
 
 ## 6. 核心契约（禁止随意破坏）
+更详细的协议定义在 `docs/worker_introduction.md` 中，以下是核心契约：
 
 ### 6.1 脚本输入（STDIN）
 
-模型名：`FuncInput` / `FuncRequest`
+模型名：`WorkerInput` / `WorkerRequest`
 
 ```json
 {
@@ -96,7 +97,6 @@ docker compose up --build
     "method": "POST",
     "uri": "/api/test?name=callit",
     "url": "http://127.0.0.1:3100/api/test?name=callit",
-    "route_suffix": "/",
     "headers": {},
     "body": "raw string",
     "json": {}
@@ -106,7 +106,7 @@ docker compose up --build
 
 ### 6.2 脚本输出（stdout JSON）
 
-模型名：`FuncOutput`
+模型名：`WorkerOutput`
 
 ```json
 {

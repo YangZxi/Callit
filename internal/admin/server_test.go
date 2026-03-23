@@ -65,6 +65,21 @@ func createAdminTestWorker(t *testing.T, store *db.Store, workerID string) {
 	}
 }
 
+func createAdminTestWorkerWithName(t *testing.T, store *db.Store, workerID string, workerName string) {
+	t.Helper()
+
+	if _, err := store.Worker.Create(context.Background(), model.Worker{
+		ID:        workerID,
+		Name:      workerName,
+		Runtime:   "python",
+		Route:     "/" + workerID,
+		TimeoutMS: 3000,
+		Enabled:   true,
+	}); err != nil {
+		t.Fatalf("创建测试 Worker 失败: %v", err)
+	}
+}
+
 func doAdminJSONRequest(t *testing.T, engine http.Handler, method string, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 
@@ -151,6 +166,48 @@ func TestWorkerCronCRUDAPI(t *testing.T) {
 	}
 	if len(listBody.Data) != 0 {
 		t.Fatalf("删除后仍存在 cron_task: %#v", listBody.Data)
+	}
+}
+
+func TestListWorkersSupportsKeywordFilter(t *testing.T) {
+	store := openAdminTestStore(t)
+	createAdminTestWorkerWithName(t, store, "worker-alpha", "Alpha Worker")
+	createAdminTestWorkerWithName(t, store, "worker-beta", "Beta Worker")
+	createAdminTestWorkerWithName(t, store, "worker-api", "支付API")
+
+	engine := NewEngine(store, router.New(), nil, config.Config{
+		AdminPrefix: "/admin",
+		AdminToken:  "test-token",
+		DataDir:     t.TempDir(),
+	})
+
+	resp := doAdminJSONRequest(t, engine, http.MethodGet, "/admin/api/workers?keyword=api", nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("按 keyword 查询 workers 接口返回错误: code=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var body struct {
+		Data []model.Worker `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("解析 workers 查询响应失败: %v", err)
+	}
+	if len(body.Data) != 1 {
+		t.Fatalf("keyword 查询结果数量不正确: got=%d data=%#v", len(body.Data), body.Data)
+	}
+	if body.Data[0].ID != "worker-api" {
+		t.Fatalf("keyword 查询命中错误 worker: %#v", body.Data[0])
+	}
+
+	fullResp := doAdminJSONRequest(t, engine, http.MethodGet, "/admin/api/workers?keyword=", nil)
+	if fullResp.Code != http.StatusOK {
+		t.Fatalf("空 keyword 查询 workers 接口返回错误: code=%d body=%s", fullResp.Code, fullResp.Body.String())
+	}
+	if err := json.Unmarshal(fullResp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("解析空 keyword 查询响应失败: %v", err)
+	}
+	if len(body.Data) != 3 {
+		t.Fatalf("空 keyword 应返回全部 worker: got=%d data=%#v", len(body.Data), body.Data)
 	}
 }
 

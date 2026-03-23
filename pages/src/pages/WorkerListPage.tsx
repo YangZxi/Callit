@@ -59,13 +59,16 @@ export default function WorkerListPage() {
   const [form, setForm] = useState<CreateWorkerForm>(initialForm);
   const [cronModalOpen, setCronModalOpen] = useState(false);
   const [cronWorker, setCronWorker] = useState<WorkerItem | null>(null);
+  const [keyword, setKeyword] = useState("");
 
   const empty = useMemo(() => !listLoading && workers.length === 0, [listLoading, workers.length]);
 
-  const loadWorkers = async () => {
+  const loadWorkers = async (searchKeyword: string = keyword) => {
     setListLoading(true);
     try {
-      const data = await api.get<WorkerItem[]>("/workers");
+      const params = new URLSearchParams();
+      params.set("keyword", searchKeyword);
+      const data = await api.get<WorkerItem[]>(`/workers?${params.toString()}`);
       setWorkers(data);
     } finally {
       setListLoading(false);
@@ -73,7 +76,7 @@ export default function WorkerListPage() {
   };
 
   useEffect(() => {
-    void loadWorkers();
+    void loadWorkers("");
   }, []);
 
   const submitForm = async () => {
@@ -188,6 +191,14 @@ export default function WorkerListPage() {
     navigate(`/workers/${workerID}`);
   };
 
+  const onKeywordKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    event.preventDefault();
+    void loadWorkers(keyword.trim());
+  };
+
   return (
     <section className="py-2 md:py-6 pb-4 md:pb-2">
       <div className="flex items-center justify-between gap-3">
@@ -195,7 +206,17 @@ export default function WorkerListPage() {
           <h1 className="text-3xl font-semibold text-default-900 dark:text-default-700">Worker 列表</h1>
           <p className="text-sm text-default-500">共 {workers.length} 个 Worker</p>
         </div>
-        <Button color="primary" onPress={openCreateModal}>新增 Worker</Button>
+        <div className="flex items-center gap-2">
+          <Input
+            className="w-40"
+            placeholder=""
+            size="sm"
+            value={keyword}
+            onKeyDown={onKeywordKeyDown}
+            onValueChange={setKeyword}
+          />
+          <Button color="primary" onPress={openCreateModal}>新增 Worker</Button>
+        </div>
       </div>
 
       <div className="mt-4 flex flex-col gap-3">

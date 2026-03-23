@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	"callit/internal/model"
@@ -36,9 +37,14 @@ func (dao *WorkerDAO) Create(ctx context.Context, worker model.Worker) (model.Wo
 	return worker, nil
 }
 
-func (dao *WorkerDAO) List(ctx context.Context) ([]model.Worker, error) {
+func (dao *WorkerDAO) List(ctx context.Context, keyword string) ([]model.Worker, error) {
 	var workers []model.Worker
-	if err := dao.db.WithContext(ctx).
+	query := dao.db.WithContext(ctx).Model(&model.Worker{})
+	if trimmedKeyword := strings.TrimSpace(keyword); trimmedKeyword != "" {
+		likeKeyword := "%" + strings.ToLower(trimmedKeyword) + "%"
+		query = query.Where("LOWER(name) LIKE ?", likeKeyword)
+	}
+	if err := query.
 		Order("created_at DESC").
 		Find(&workers).Error; err != nil {
 		return nil, err

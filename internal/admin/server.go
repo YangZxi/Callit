@@ -361,7 +361,8 @@ func (s *Server) updateWorker(c *gin.Context) {
 }
 
 func (s *Server) listWorkers(c *gin.Context) {
-	list, err := s.store.Worker.List(c.Request.Context())
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	list, err := s.store.Worker.List(c.Request.Context(), keyword)
 	if err != nil {
 		apiError(c, http.StatusInternalServerError, err.Error())
 		return
