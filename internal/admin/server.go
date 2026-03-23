@@ -481,10 +481,9 @@ func (s *Server) deleteWorker(c *gin.Context) {
 
 func (s *Server) uploadFiles(c *gin.Context) {
 	id := c.Param("id")
-	worker, err := s.store.Worker.GetByID(c.Request.Context(), id)
-	if err != nil {
+	if _, err := s.store.Worker.GetByID(c.Request.Context(), id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			apiError(c, http.StatusNotFound, "函数不存在")
+			apiError(c, http.StatusNotFound, "Worker 不存在")
 			return
 		}
 		apiError(c, http.StatusInternalServerError, err.Error())
@@ -505,7 +504,7 @@ func (s *Server) uploadFiles(c *gin.Context) {
 
 	functionDir := filepath.Join(s.dataDir, "workers", id)
 	if err := os.MkdirAll(functionDir, 0o755); err != nil {
-		apiError(c, http.StatusInternalServerError, fmt.Sprintf("创建函数目录失败: %v", err))
+		apiError(c, http.StatusInternalServerError, fmt.Sprintf("创建 Worker 目录失败: %v", err))
 		return
 	}
 
@@ -520,11 +519,6 @@ func (s *Server) uploadFiles(c *gin.Context) {
 			apiError(c, http.StatusBadRequest, err.Error())
 			return
 		}
-	}
-
-	if err := ensureMainFileExists(functionDir, worker.Runtime); err != nil {
-		apiError(c, http.StatusBadRequest, err.Error())
-		return
 	}
 
 	files, err := listFiles(functionDir)
@@ -635,10 +629,9 @@ func (s *Server) saveFileContent(c *gin.Context) {
 		return
 	}
 
-	worker, err := s.store.Worker.GetByID(c.Request.Context(), id)
-	if err != nil {
+	if _, err := s.store.Worker.GetByID(c.Request.Context(), id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			apiError(c, http.StatusNotFound, "函数不存在")
+			apiError(c, http.StatusNotFound, "Worker 不存在")
 			return
 		}
 		apiError(c, http.StatusInternalServerError, err.Error())
@@ -647,20 +640,8 @@ func (s *Server) saveFileContent(c *gin.Context) {
 
 	functionDir := filepath.Join(s.dataDir, "workers", id)
 	if err := os.MkdirAll(functionDir, 0o755); err != nil {
-		apiError(c, http.StatusInternalServerError, fmt.Sprintf("创建函数目录失败: %v", err))
+		apiError(c, http.StatusInternalServerError, fmt.Sprintf("创建 Worker 目录失败: %v", err))
 		return
-	}
-
-	mainFile := mainFilenameByRuntime(worker.Runtime)
-	if filename != mainFile {
-		if _, err := os.Stat(filepath.Join(functionDir, mainFile)); err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				apiError(c, http.StatusBadRequest, fmt.Sprintf("请先创建主文件 %s", mainFile))
-				return
-			}
-			apiError(c, http.StatusInternalServerError, err.Error())
-			return
-		}
 	}
 
 	target := filepath.Join(functionDir, filename)
@@ -698,7 +679,7 @@ func (s *Server) deleteFile(c *gin.Context) {
 	worker, err := s.store.Worker.GetByID(c.Request.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			apiError(c, http.StatusNotFound, "函数不存在")
+			apiError(c, http.StatusNotFound, "Worker 不存在")
 			return
 		}
 		apiError(c, http.StatusInternalServerError, err.Error())
@@ -721,10 +702,6 @@ func (s *Server) deleteFile(c *gin.Context) {
 		return
 	}
 
-	if err := ensureMainFileExists(filepath.Join(s.dataDir, "workers", id), worker.Runtime); err != nil {
-		apiError(c, http.StatusBadRequest, err.Error())
-		return
-	}
 	apiSuccess(c, gin.H{"ok": true})
 }
 
@@ -1061,20 +1038,6 @@ func saveUploadedFile(functionDir string, fh *multipart.FileHeader) error {
 
 	if _, err := io.Copy(dst, src); err != nil {
 		return fmt.Errorf("保存文件失败: %w", err)
-	}
-	return nil
-}
-
-func ensureMainFileExists(functionDir string, runtime string) error {
-	mainFile := mainFilenameByRuntime(runtime)
-	if mainFile == "" {
-		return fmt.Errorf("runtime 不合法")
-	}
-	if _, err := os.Stat(filepath.Join(functionDir, mainFile)); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("主文件缺失，必须包含 %s", mainFile)
-		}
-		return err
 	}
 	return nil
 }
