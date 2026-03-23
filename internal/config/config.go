@@ -20,6 +20,10 @@ type AppConfig struct {
 	AI_Model            string `config:"AI_MODEL"`
 	AI_MaxContextTokens int    `config:"AI_MAX_CONTEXT_TOKENS"`
 	AI_TimeoutMS        int    `config:"AI_TIMEOUT_MS"`
+
+	// MCP
+	MCP_Enable bool   `config:"MCP_ENABLE"`
+	MCP_Token  string `config:"MCP_TOKEN"`
 }
 
 type Config struct {
@@ -201,6 +205,8 @@ func (cfg *Config) Sync(ctx context.Context, dao AppConfigDao) error {
 		AI_Model:            getEnv("AI_MODEL", "gpt-5"),
 		AI_MaxContextTokens: getInt("AI_MAX_CONTEXT_TOKENS", 16000),
 		AI_TimeoutMS:        getInt("AI_TIMEOUT_MS", 60000),
+		MCP_Enable:          getBool("MCP_ENABLE", false),
+		MCP_Token:           getEnv("MCP_TOKEN", ""),
 	}
 	if dao == nil {
 		return nil

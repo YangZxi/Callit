@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host --port 3180",
     "build": "vite build",
+    "build:dev": "vite build --outDir '../public/admin'",
     "preview": "vite preview --host --port 4173"
   },
   "dependencies": {

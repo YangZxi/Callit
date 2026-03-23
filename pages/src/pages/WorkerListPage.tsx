@@ -113,7 +113,6 @@ export default function WorkerListPage() {
         await api.post<WorkerItem>("/workers/update", {
           id: editingID,
           name: form.name.trim(),
-          runtime: form.runtime,
           route: form.route.trim(),
           timeout_ms: timeout,
           enabled: form.enabled,

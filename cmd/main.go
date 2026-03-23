@@ -19,6 +19,7 @@ import (
 	"callit/internal/cron"
 	"callit/internal/db"
 	"callit/internal/executor"
+	"callit/internal/mcp"
 	"callit/internal/router"
 
 	"golang.org/x/sync/errgroup"
@@ -42,7 +43,7 @@ func main() {
 	reg := router.New()
 	funcs, err := store.Worker.ListEnabled(context.Background())
 	if err != nil {
-		log.Fatalf("加载启用函数失败: %v", err)
+		log.Fatalf("加载已启用的 Worker 失败: %v", err)
 	}
 	reg.Reload(funcs)
 
@@ -53,23 +54,29 @@ func main() {
 	}
 
 	routerEngine := router.NewEngine(store, reg, cfg.DataDir, invoker)
-	adminEngine := admin.NewEngine(store, reg, cronManager, cfg)
-	handler := serverRouteHandler(adminEngine, routerEngine, cfg.AdminPrefix)
+	adminEngine := admin.NewEngine(store, reg, cronManager, &cfg)
+	var mcpHandler http.Handler
+	if cfg.AppConfig.MCP_Enable {
+		mcpHandler = mcp.NewHandler(store, reg, cronManager, &cfg)
+	}
+	handler := serverRouteHandler(adminEngine, mcpHandler, routerEngine, cfg.AdminPrefix, cfg.AppConfig.MCP_Enable)
 
-	srv := &http.Server{
+	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.ServerPort),
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-
 	localIP := resolveLocalIPv4()
 	log.Printf("服务启动: http://%s:%d", localIP, cfg.ServerPort)
 	log.Printf("Admin 服务入口: http://%s:%d%s", localIP, cfg.ServerPort, cfg.AdminPrefix)
 	log.Printf("AdminToken: %s", cfg.AdminToken)
+	if cfg.AppConfig.MCP_Enable {
+		log.Printf("MCP 服务入口: http://%s:%d/mcp", localIP, cfg.ServerPort)
+	}
 
 	group, gctx := errgroup.WithContext(context.Background())
 	group.Go(func() error {
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return fmt.Errorf("服务异常: %w", err)
 		}
 		return nil
@@ -88,7 +95,7 @@ func main() {
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("关闭服务失败: %w", err)
 		}
 		return nil
@@ -134,10 +141,14 @@ func resolveLocalIPv4() string {
 	return "127.0.0.1"
 }
 
-func serverRouteHandler(adminHandler http.Handler, routerHandler http.Handler, adminPrefix string) http.Handler {
+func serverRouteHandler(adminHandler http.Handler, mcpHandler http.Handler, routerHandler http.Handler, adminPrefix string, mcpEnabled bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isAdminPath(r.URL.Path, adminPrefix) {
 			adminHandler.ServeHTTP(w, r)
+			return
+		}
+		if mcpEnabled && mcpHandler != nil && isMCPPath(r.URL.Path) {
+			mcpHandler.ServeHTTP(w, r)
 			return
 		}
 		routerHandler.ServeHTTP(w, r)
@@ -147,4 +158,8 @@ func serverRouteHandler(adminHandler http.Handler, routerHandler http.Handler, a
 func isAdminPath(path string, adminPrefix string) bool {
 	flag := path == adminPrefix || path == adminPrefix+"/" || strings.HasPrefix(path, adminPrefix+"/")
 	return flag || strings.HasPrefix(path, "/admin/assets")
+}
+
+func isMCPPath(path string) bool {
+	return path == "/mcp" || path == "/mcp/" || strings.HasPrefix(path, "/mcp/")
 }
