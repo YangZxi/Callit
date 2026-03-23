@@ -6,7 +6,7 @@ WORKDIR /app/pages
 COPY pages ./
 RUN npm install -g pnpm@latest-10 && pnpm install --frozen-lockfile && pnpm run build
 
-FROM golang:1.23-bookworm AS backend-builder
+FROM golang:1.25-bookworm AS backend-builder
 WORKDIR /app
 
 COPY go.mod go.sum* ./

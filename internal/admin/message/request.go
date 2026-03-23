@@ -1,9 +1,17 @@
 package message
 
-// CreateWorkerRequest 表示创建或更新 Worker 的请求体。
+// CreateWorkerRequest 表示创建 Worker 的请求体。
 type CreateWorkerRequest struct {
 	Name      string `json:"name"`
 	Runtime   string `json:"runtime"`
+	Route     string `json:"route"`
+	TimeoutMS int    `json:"timeout_ms"`
+	Enabled   *bool  `json:"enabled"`
+}
+
+// UpdateWorkerRequest 表示更新 Worker 的请求体。
+type UpdateWorkerRequest struct {
+	Name      string `json:"name"`
 	Route     string `json:"route"`
 	TimeoutMS int    `json:"timeout_ms"`
 	Enabled   *bool  `json:"enabled"`

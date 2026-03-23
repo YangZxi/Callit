@@ -64,6 +64,21 @@ docker compose up -d
 - Router: `http://127.0.0.1:3100`
 - Admin: `http://127.0.0.1:3100/admin`
 
+### Skill 与 MCP 服务
+如果你希望在 AI agent 中通过自然语言的方式来管理 Callit Worker，可以安装 `callit-skill`，并确保配置了 `callit-mcp` MCP 服务。  
+
+在新的 session/thread 中将以下内容发送给你的 AI agent 来安装 `callit-skill`：
+```text
+Fetch and follow instructions from https://raw.githubusercontent.com/YangZxi/Callit-skill/refs/heads/main/README.md to install the skill.
+```
+
+更多关于该 skill 的介绍请参考 [Callit-skill](https://github.com/YangZxi/Callit-skill)
+
+#### MCP
+项目内置了一个简单的 MCP server，你需要通过登录到 Admin 后台来启用它，并设置一个`MCP_TOKEN`，AI agent 才能通过 MCP 来管理 Worker。
+- MCP Server Name: `callit-mcp`
+- MCP Server Url: `http://<host>/mcp`，其中 `<host>` 是 AI agent 能访问到的地址，通常是部署 Callit 的服务器 IP 或域名
+
 ## Worker 模板
 
 ### Python Worker 模板

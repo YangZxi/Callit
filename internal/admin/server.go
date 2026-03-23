@@ -3,21 +3,16 @@ package admin
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
-	"mime"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"callit/internal/admin/chat"
 	"callit/internal/admin/message"
@@ -30,7 +25,6 @@ import (
 	"callit/internal/router"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 const adminAuthCookieName = "callit_admin_token"
@@ -50,6 +44,7 @@ type Server struct {
 	dataDir      string
 	adminToken   string
 	chatHandler  *chat.Handler
+	workerSvc    *WorkerService
 	configMu     sync.RWMutex
 
 	dependencyTaskMu      sync.Mutex
@@ -73,7 +68,7 @@ func apiError(c *gin.Context, httpStatus int, msg string) {
 }
 
 // NewEngine 创建 Admin Gin 引擎。
-func NewEngine(store *db.Store, reg *router.Registry, cronReloader interface{ Reload(context.Context) error }, cfg config.Config) *gin.Engine {
+func NewEngine(store *db.Store, reg *router.Registry, cronReloader interface{ Reload(context.Context) error }, cfg *config.Config) *gin.Engine {
 	s := &Server{
 		store:        store,
 		reg:          reg,
@@ -82,6 +77,7 @@ func NewEngine(store *db.Store, reg *router.Registry, cronReloader interface{ Re
 		dataDir:      cfg.DataDir,
 		adminToken:   cfg.AdminToken,
 		chatHandler:  chat.NewHandler(store, cfg.DataDir, cfg.AppConfig),
+		workerSvc:    NewWorkerService(store, reg, cronReloader, cfg.DataDir),
 	}
 	e := gin.New()
 	e.Use(gin.Recovery(), common.RequestIDMiddleware())
@@ -124,8 +120,8 @@ func NewEngine(store *db.Store, reg *router.Registry, cronReloader interface{ Re
 		api.POST("/workers/:id/chat/stream", s.chatHandler.Stream)
 		api.POST("/workers/:id/chat/session/clear", s.chatHandler.ClearSession)
 
-		api.GET("/config", s.AdminGetConfigHandler(&cfg))
-		api.POST("/config", s.AdminUpsertConfigHandler(&cfg))
+		api.GET("/config", s.AdminGetConfigHandler(cfg))
+		api.POST("/config", s.AdminUpsertConfigHandler(cfg))
 	}
 
 	// 静态资源
@@ -232,51 +228,22 @@ func (s *Server) createWorker(c *gin.Context) {
 		return
 	}
 
-	enabled := true
-	if req.Enabled != nil {
-		enabled = *req.Enabled
-	}
-	if req.TimeoutMS <= 0 {
-		req.TimeoutMS = 5000
-	}
-
-	worker := model.Worker{
-		ID:        uuid.NewString(),
-		Name:      strings.TrimSpace(req.Name),
-		Runtime:   strings.TrimSpace(req.Runtime),
-		Route:     strings.TrimSpace(req.Route),
+	created, err := s.workerSvc.CreateWorker(c.Request.Context(), CreateWorkerInput{
+		Name:      req.Name,
+		Runtime:   req.Runtime,
+		Route:     req.Route,
 		TimeoutMS: req.TimeoutMS,
-		Enabled:   enabled,
-	}
-	if err := validateWorker(worker); err != nil {
-		apiError(c, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	created, err := s.store.Worker.Create(c.Request.Context(), worker)
+		Enabled:   req.Enabled,
+	})
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint failed: worker.route") {
+		if errors.Is(err, ErrWorkerRouteExists) {
 			apiError(c, http.StatusConflict, "路由已存在")
 			return
 		}
-		apiError(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	functionDir := filepath.Join(s.dataDir, "workers", created.ID)
-	if err := os.MkdirAll(functionDir, 0o755); err != nil {
-		_ = s.store.Worker.Delete(context.Background(), created.ID)
-		apiError(c, http.StatusInternalServerError, fmt.Sprintf("创建函数目录失败: %v", err))
-		return
-	}
-	if err := createMainFileFromTemplate(functionDir, created.Runtime); err != nil {
-		_ = os.RemoveAll(functionDir)
-		_ = s.store.Worker.Delete(context.Background(), created.ID)
-		apiError(c, http.StatusInternalServerError, fmt.Sprintf("创建入口文件失败: %v", err))
-		return
-	}
-
-	if err := s.reloadWorkersState(c.Request.Context()); err != nil {
+		if strings.Contains(err.Error(), "不能为空") || strings.Contains(err.Error(), "仅支持") || strings.Contains(err.Error(), "必须") || strings.Contains(err.Error(), "不合法") {
+			apiError(c, http.StatusBadRequest, err.Error())
+			return
+		}
 		apiError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -286,7 +253,7 @@ func (s *Server) createWorker(c *gin.Context) {
 func (s *Server) updateWorker(c *gin.Context) {
 	var req struct {
 		message.WorkerIDRequest
-		message.CreateWorkerRequest
+		message.UpdateWorkerRequest
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiError(c, http.StatusBadRequest, "请求体格式错误")
@@ -299,61 +266,26 @@ func (s *Server) updateWorker(c *gin.Context) {
 		return
 	}
 
-	origin, err := s.store.Worker.GetByID(c.Request.Context(), id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			apiError(c, http.StatusNotFound, "函数不存在")
-			return
-		}
-		apiError(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	if req.TimeoutMS <= 0 {
-		req.TimeoutMS = 5000
-	}
-
-	enabled := origin.Enabled
-	if req.Enabled != nil {
-		enabled = *req.Enabled
-	}
-	runtime := strings.TrimSpace(req.Runtime)
-	if runtime == "" {
-		runtime = origin.Runtime
-	}
-	if runtime != origin.Runtime {
-		apiError(c, http.StatusBadRequest, "更新时不允许修改 runtime")
-		return
-	}
-
-	updating := model.Worker{
+	updated, err := s.workerSvc.UpdateWorker(c.Request.Context(), UpdateWorkerInput{
 		ID:        id,
-		Name:      strings.TrimSpace(req.Name),
-		Runtime:   runtime,
-		Route:     strings.TrimSpace(req.Route),
+		Name:      req.Name,
+		Route:     req.Route,
 		TimeoutMS: req.TimeoutMS,
-		Enabled:   enabled,
-	}
-	if err := validateWorker(updating); err != nil {
-		apiError(c, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	updated, err := s.store.Worker.Update(c.Request.Context(), updating)
+		Enabled:   req.Enabled,
+	})
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, ErrWorkerNotFound) {
 			apiError(c, http.StatusNotFound, "函数不存在")
 			return
 		}
-		if strings.Contains(err.Error(), "UNIQUE constraint failed: worker.route") {
+		if errors.Is(err, ErrWorkerRouteExists) {
 			apiError(c, http.StatusConflict, "路由已存在")
 			return
 		}
-		apiError(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	if err := s.reloadWorkersState(c.Request.Context()); err != nil {
+		if strings.Contains(err.Error(), "不能为空") || strings.Contains(err.Error(), "仅支持") || strings.Contains(err.Error(), "必须") {
+			apiError(c, http.StatusBadRequest, err.Error())
+			return
+		}
 		apiError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -362,7 +294,7 @@ func (s *Server) updateWorker(c *gin.Context) {
 
 func (s *Server) listWorkers(c *gin.Context) {
 	keyword := strings.TrimSpace(c.Query("keyword"))
-	list, err := s.store.Worker.List(c.Request.Context(), keyword)
+	list, err := s.workerSvc.SearchWorkers(c.Request.Context(), keyword)
 	if err != nil {
 		apiError(c, http.StatusInternalServerError, err.Error())
 		return
@@ -376,9 +308,9 @@ func (s *Server) getWorker(c *gin.Context) {
 		apiError(c, http.StatusBadRequest, "id 不能为空")
 		return
 	}
-	worker, err := s.store.Worker.GetByID(c.Request.Context(), id)
+	worker, err := s.workerSvc.GetWorker(c.Request.Context(), id)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, ErrWorkerNotFound) {
 			apiError(c, http.StatusNotFound, "函数不存在")
 			return
 		}
@@ -394,8 +326,8 @@ func (s *Server) listWorkerLogs(c *gin.Context) {
 		apiError(c, http.StatusBadRequest, "id 不能为空")
 		return
 	}
-	if _, err := s.store.Worker.GetByID(c.Request.Context(), id); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	if _, err := s.workerSvc.GetWorker(c.Request.Context(), id); err != nil {
+		if errors.Is(err, ErrWorkerNotFound) {
 			apiError(c, http.StatusNotFound, "函数不存在")
 			return
 		}
@@ -481,8 +413,8 @@ func (s *Server) deleteWorker(c *gin.Context) {
 
 func (s *Server) uploadFiles(c *gin.Context) {
 	id := c.Param("id")
-	if _, err := s.store.Worker.GetByID(c.Request.Context(), id); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	if _, err := s.workerSvc.GetWorker(c.Request.Context(), id); err != nil {
+		if errors.Is(err, ErrWorkerNotFound) {
 			apiError(c, http.StatusNotFound, "Worker 不存在")
 			return
 		}
@@ -502,28 +434,10 @@ func (s *Server) uploadFiles(c *gin.Context) {
 		return
 	}
 
-	functionDir := filepath.Join(s.dataDir, "workers", id)
-	if err := os.MkdirAll(functionDir, 0o755); err != nil {
-		apiError(c, http.StatusInternalServerError, fmt.Sprintf("创建 Worker 目录失败: %v", err))
-		return
-	}
-
 	fileHeaders := flattenFiles(c.Request.MultipartForm.File)
-	if len(fileHeaders) == 0 {
-		apiError(c, http.StatusBadRequest, "至少上传一个文件")
-		return
-	}
-
-	for _, fh := range fileHeaders {
-		if err := saveUploadedFile(functionDir, fh); err != nil {
-			apiError(c, http.StatusBadRequest, err.Error())
-			return
-		}
-	}
-
-	files, err := listFiles(functionDir)
+	files, err := s.workerSvc.UploadWorkerFiles(c.Request.Context(), id, fileHeaders)
 	if err != nil {
-		apiError(c, http.StatusInternalServerError, err.Error())
+		apiError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	apiSuccess(c, gin.H{"files": files})
@@ -531,22 +445,12 @@ func (s *Server) uploadFiles(c *gin.Context) {
 
 func (s *Server) listWorkerFiles(c *gin.Context) {
 	id := c.Param("id")
-	if _, err := s.store.Worker.GetByID(c.Request.Context(), id); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	files, err := s.workerSvc.ListWorkerFiles(c.Request.Context(), id)
+	if err != nil {
+		if errors.Is(err, ErrWorkerNotFound) {
 			apiError(c, http.StatusNotFound, "函数不存在")
 			return
 		}
-		apiError(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	functionDir := filepath.Join(s.dataDir, "workers", id)
-	if err := os.MkdirAll(functionDir, 0o755); err != nil {
-		apiError(c, http.StatusInternalServerError, fmt.Sprintf("创建函数目录失败: %v", err))
-		return
-	}
-	files, err := listFiles(functionDir)
-	if err != nil {
 		apiError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -555,59 +459,26 @@ func (s *Server) listWorkerFiles(c *gin.Context) {
 
 func (s *Server) getFileContent(c *gin.Context) {
 	id := c.Param("id")
-	filename := strings.TrimSpace(c.Param("filename"))
-	if filename == "" {
-		apiError(c, http.StatusBadRequest, "filename 不能为空")
-		return
-	}
-	if filepath.Base(filename) != filename || strings.Contains(filename, "/") || strings.Contains(filename, "\\") {
-		apiError(c, http.StatusBadRequest, "非法文件名")
-		return
-	}
-
-	if _, err := s.store.Worker.GetByID(c.Request.Context(), id); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			apiError(c, http.StatusNotFound, "函数不存在")
-			return
-		}
-		apiError(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	path := filepath.Join(s.dataDir, "workers", id, filename)
-	raw, err := os.ReadFile(path)
+	content, err := s.workerSvc.GetWorkerFile(c.Request.Context(), id, strings.TrimSpace(c.Param("filename")))
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		switch {
+		case errors.Is(err, ErrWorkerNotFound):
+			apiError(c, http.StatusNotFound, "函数不存在")
+		case errors.Is(err, ErrFileNotFound):
 			apiError(c, http.StatusNotFound, "文件不存在")
-			return
+		case errors.Is(err, ErrBinaryFileNotSupport):
+			apiError(c, http.StatusBadRequest, "仅支持文本文件和图片预览")
+		default:
+			apiError(c, http.StatusBadRequest, err.Error())
 		}
-		apiError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-
-	mimeType := detectFileMimeType(filename, raw)
-	if strings.HasPrefix(mimeType, "image/") {
-		dataURL := "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(raw)
-		apiSuccess(c, gin.H{
-			"filename":         filename,
-			"content":          "",
-			"media_type":       "image",
-			"mime_type":        mimeType,
-			"preview_data_url": dataURL,
-		})
-		return
-	}
-
-	if !utf8.Valid(raw) {
-		apiError(c, http.StatusBadRequest, "仅支持文本文件和图片预览")
-		return
-	}
-
 	apiSuccess(c, gin.H{
-		"filename":   filename,
-		"content":    string(raw),
-		"media_type": "text",
-		"mime_type":  mimeType,
+		"filename":         content.Filename,
+		"content":          content.Content,
+		"media_type":       content.MediaType,
+		"mime_type":        content.MIMEType,
+		"preview_data_url": content.PreviewDataURL,
 	})
 }
 
@@ -619,40 +490,14 @@ func (s *Server) saveFileContent(c *gin.Context) {
 		return
 	}
 
-	filename := strings.TrimSpace(req.Filename)
-	if filename == "" {
-		apiError(c, http.StatusBadRequest, "filename 不能为空")
-		return
-	}
-	if filepath.Base(filename) != filename || strings.Contains(filename, "/") || strings.Contains(filename, "\\") {
-		apiError(c, http.StatusBadRequest, "非法文件名")
-		return
-	}
-
-	if _, err := s.store.Worker.GetByID(c.Request.Context(), id); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			apiError(c, http.StatusNotFound, "Worker 不存在")
-			return
-		}
-		apiError(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	functionDir := filepath.Join(s.dataDir, "workers", id)
-	if err := os.MkdirAll(functionDir, 0o755); err != nil {
-		apiError(c, http.StatusInternalServerError, fmt.Sprintf("创建 Worker 目录失败: %v", err))
-		return
-	}
-
-	target := filepath.Join(functionDir, filename)
-	if err := os.WriteFile(target, []byte(req.Content), 0o644); err != nil {
-		apiError(c, http.StatusInternalServerError, fmt.Sprintf("写入文件失败: %v", err))
-		return
-	}
-
-	files, err := listFiles(functionDir)
+	files, err := s.workerSvc.SaveWorkerFileContent(c.Request.Context(), id, req.Filename, req.Content)
 	if err != nil {
-		apiError(c, http.StatusInternalServerError, err.Error())
+		switch {
+		case errors.Is(err, ErrWorkerNotFound):
+			apiError(c, http.StatusNotFound, "Worker 不存在")
+		default:
+			apiError(c, http.StatusBadRequest, err.Error())
+		}
 		return
 	}
 	apiSuccess(c, gin.H{"files": files})
@@ -666,42 +511,19 @@ func (s *Server) deleteFile(c *gin.Context) {
 		return
 	}
 
-	filename := strings.TrimSpace(req.Filename)
-	if filename == "" {
-		apiError(c, http.StatusBadRequest, "filename 不能为空")
-		return
-	}
-	if filepath.Base(filename) != filename || strings.Contains(filename, "/") || strings.Contains(filename, "\\") {
-		apiError(c, http.StatusBadRequest, "非法文件名")
-		return
-	}
-
-	worker, err := s.store.Worker.GetByID(c.Request.Context(), id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	if err := s.workerSvc.DeleteWorkerFile(c.Request.Context(), id, req.Filename); err != nil {
+		switch {
+		case errors.Is(err, ErrWorkerNotFound):
 			apiError(c, http.StatusNotFound, "Worker 不存在")
-			return
-		}
-		apiError(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	mainFile := mainFilenameByRuntime(worker.Runtime)
-	if filename == mainFile {
-		apiError(c, http.StatusBadRequest, "入口文件不能删除")
-		return
-	}
-
-	target := filepath.Join(s.dataDir, "workers", id, filename)
-	if err := os.Remove(target); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		case errors.Is(err, ErrMainFileDeletion):
+			apiError(c, http.StatusBadRequest, "入口文件不能删除")
+		case errors.Is(err, ErrFileNotFound):
 			apiError(c, http.StatusNotFound, "文件不存在")
-			return
+		default:
+			apiError(c, http.StatusBadRequest, err.Error())
 		}
-		apiError(c, http.StatusInternalServerError, fmt.Sprintf("删除文件失败: %v", err))
 		return
 	}
-
 	apiSuccess(c, gin.H{"ok": true})
 }
 
@@ -980,128 +802,12 @@ func (s *Server) validateCronExpression(expr string) error {
 	return cron.ValidateExpression(expr)
 }
 
-func validateWorker(worker model.Worker) error {
-	if strings.TrimSpace(worker.Name) == "" {
-		return fmt.Errorf("name 不能为空")
-	}
-	if worker.Runtime != "python" && worker.Runtime != "node" {
-		return fmt.Errorf("runtime 仅支持 python 或 node")
-	}
-	if err := model.ValidateRoute(worker.Route); err != nil {
-		return err
-	}
-	if worker.TimeoutMS <= 0 {
-		return fmt.Errorf("timeout_ms 必须大于 0")
-	}
-	return nil
-}
-
 func flattenFiles(fileMap map[string][]*multipart.FileHeader) []*multipart.FileHeader {
 	result := make([]*multipart.FileHeader, 0)
 	for _, files := range fileMap {
 		result = append(result, files...)
 	}
 	return result
-}
-
-func detectFileMimeType(filename string, raw []byte) string {
-	extMime := mime.TypeByExtension(strings.ToLower(filepath.Ext(filename)))
-	if extMime != "" {
-		return extMime
-	}
-	if len(raw) == 0 {
-		return "application/octet-stream"
-	}
-	return http.DetectContentType(raw)
-}
-
-func saveUploadedFile(functionDir string, fh *multipart.FileHeader) error {
-	if fh == nil {
-		return fmt.Errorf("文件不能为空")
-	}
-	name := fh.Filename
-	if filepath.Base(name) != name || strings.Contains(name, "/") || strings.Contains(name, "\\") {
-		return fmt.Errorf("非法文件名: %s", name)
-	}
-	src, err := fh.Open()
-	if err != nil {
-		return fmt.Errorf("打开上传文件失败: %w", err)
-	}
-	defer src.Close()
-
-	target := filepath.Join(functionDir, name)
-	dst, err := os.Create(target)
-	if err != nil {
-		return fmt.Errorf("写入文件失败: %w", err)
-	}
-	defer dst.Close()
-
-	if _, err := io.Copy(dst, src); err != nil {
-		return fmt.Errorf("保存文件失败: %w", err)
-	}
-	return nil
-}
-
-func mainFilenameByRuntime(runtime string) string {
-	switch runtime {
-	case "python":
-		return "main.py"
-	case "node":
-		return "main.js"
-	default:
-		return ""
-	}
-}
-
-func templateFilenameByRuntime(runtime string) string {
-	switch runtime {
-	case "python":
-		return "python.py"
-	case "node":
-		return "node.js"
-	default:
-		return ""
-	}
-}
-
-func createMainFileFromTemplate(functionDir string, runtime string) error {
-	mainFile := mainFilenameByRuntime(runtime)
-	if mainFile == "" {
-		return fmt.Errorf("runtime 不合法")
-	}
-	templateFile := templateFilenameByRuntime(runtime)
-	if templateFile == "" {
-		return fmt.Errorf("runtime 不合法")
-	}
-	templatePath := filepath.Join("resources/worker_templates", templateFile)
-	content, err := os.ReadFile(templatePath)
-	if err != nil {
-		return fmt.Errorf("读取模板文件失败: %w", err)
-	}
-	target := filepath.Join(functionDir, mainFile)
-	if err := os.WriteFile(target, content, 0o644); err != nil {
-		return fmt.Errorf("写入主文件失败: %w", err)
-	}
-	return nil
-}
-
-func listFiles(dir string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return []string{}, nil
-		}
-		return nil, err
-	}
-	files := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		files = append(files, entry.Name())
-	}
-	sort.Strings(files)
-	return files, nil
 }
 
 var (

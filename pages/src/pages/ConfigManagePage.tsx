@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, Card, CardBody, CardHeader, Input, Spinner, addToast } from "@heroui/react";
+import { Button, Card, CardBody, CardHeader, Input, Spinner, Switch, addToast } from "@heroui/react";
 
 import api from "@/lib/api";
 
@@ -8,7 +8,9 @@ type AppConfigKey =
   | "AI_API_KEY"
   | "AI_MODEL"
   | "AI_MAX_CONTEXT_TOKENS"
-  | "AI_TIMEOUT_MS";
+  | "AI_TIMEOUT_MS"
+  | "MCP_ENABLE"
+  | "MCP_TOKEN";
 
 type AdminConfigItem = {
   key: string;
@@ -30,19 +32,23 @@ const defaultValues: ConfigValues = {
   AI_MODEL: "",
   AI_MAX_CONTEXT_TOKENS: "",
   AI_TIMEOUT_MS: "",
+  MCP_ENABLE: "false",
+  MCP_TOKEN: "",
 };
 
 const fields: Array<{
   key: AppConfigKey;
   label: string;
   placeholder: string;
-  type?: "text" | "password" | "number";
+  type?: "text" | "password" | "number" | "switch";
 }> = [
   { key: "AI_BASE_URL", label: "AI Base URL", placeholder: "https://api.openai.com/v1" },
   { key: "AI_API_KEY", label: "AI API Key", placeholder: "sk-xxx", type: "password" },
   { key: "AI_MODEL", label: "AI 模型", placeholder: "gpt-5" },
   { key: "AI_MAX_CONTEXT_TOKENS", label: "最大上下文 Token", placeholder: "16000", type: "number" },
   { key: "AI_TIMEOUT_MS", label: "请求超时(ms)", placeholder: "60000", type: "number" },
+  { key: "MCP_ENABLE", label: "MCP Enable", placeholder: "false", type: "switch" },
+  { key: "MCP_TOKEN", label: "MCP Token", placeholder: "mcp-token", type: "text" },
 ];
 
 function labelOfSource(source: AdminConfigItem["source"]) {
@@ -125,6 +131,37 @@ export default function ConfigManagePage() {
     }
   };
 
+  const renderFormField = (field: typeof fields[0], invalid: boolean) => {
+    if (field.type === "switch") {
+      return (
+        <label>
+          {field.label}
+          <Switch
+            isSelected={values[field.key] === "true"}
+            onValueChange={(selected) => {
+              setValues((prev) => ({ ...prev, [field.key]: selected ? "true" : "false" }));
+            }}
+          >
+            {`/ ${sourceHint(field.key)}`}
+          </Switch>
+        </label>
+      );
+    } else {
+      return <Input
+        key={field.key}
+        errorMessage={invalid ? intErrors[field.key] : undefined}
+        isInvalid={invalid}
+        label={`${field.label} / ${sourceHint(field.key)}`}
+        placeholder={field.placeholder}
+        type={field.type ?? "text"}
+        value={values[field.key]}
+        onValueChange={(value) => {
+          setValues((prev) => ({ ...prev, [field.key]: value }));
+        }}
+      />
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4">
@@ -157,18 +194,7 @@ export default function ConfigManagePage() {
               {fields.map((field) => {
                 const invalid = submitAttempted && !!intErrors[field.key];
                 return (
-                  <Input
-                    key={field.key}
-                    errorMessage={invalid ? intErrors[field.key] : undefined}
-                    isInvalid={invalid}
-                    label={`${field.label} / ${sourceHint(field.key)}`}
-                    placeholder={field.placeholder}
-                    type={field.type ?? "text"}
-                    value={values[field.key]}
-                    onValueChange={(value) => {
-                      setValues((prev) => ({ ...prev, [field.key]: value }));
-                    }}
-                  />
+                  renderFormField(field, invalid)
                 );
               })}
             </div>

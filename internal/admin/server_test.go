@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"testing"
 
+	"callit/internal/admin/message"
 	"callit/internal/config"
 	"callit/internal/db"
 	"callit/internal/model"
@@ -105,11 +106,12 @@ func TestWorkerCronCRUDAPI(t *testing.T) {
 	store := openAdminTestStore(t)
 	createAdminTestWorker(t, store, "worker-cron-api")
 
-	engine := NewEngine(store, router.New(), nil, config.Config{
+	cfg := config.Config{
 		AdminPrefix: "/admin",
 		AdminToken:  "test-token",
 		DataDir:     t.TempDir(),
-	})
+	}
+	engine := NewEngine(store, router.New(), nil, &cfg)
 
 	createResp := doAdminJSONRequest(t, engine, http.MethodPost, "/admin/api/workers/worker-cron-api/crons/create", map[string]any{
 		"cron": "*/5 * * * *",
@@ -175,11 +177,12 @@ func TestListWorkersSupportsKeywordFilter(t *testing.T) {
 	createAdminTestWorkerWithName(t, store, "worker-beta", "Beta Worker")
 	createAdminTestWorkerWithName(t, store, "worker-api", "支付API")
 
-	engine := NewEngine(store, router.New(), nil, config.Config{
+	cfg := config.Config{
 		AdminPrefix: "/admin",
 		AdminToken:  "test-token",
 		DataDir:     t.TempDir(),
-	})
+	}
+	engine := NewEngine(store, router.New(), nil, &cfg)
 
 	resp := doAdminJSONRequest(t, engine, http.MethodGet, "/admin/api/workers?keyword=api", nil)
 	if resp.Code != http.StatusOK {
@@ -215,16 +218,110 @@ func TestWorkerCronCreateRejectsInvalidCron(t *testing.T) {
 	store := openAdminTestStore(t)
 	createAdminTestWorker(t, store, "worker-cron-invalid")
 
-	engine := NewEngine(store, router.New(), nil, config.Config{
+	cfg := config.Config{
 		AdminPrefix: "/admin",
 		AdminToken:  "test-token",
 		DataDir:     t.TempDir(),
-	})
+	}
+	engine := NewEngine(store, router.New(), nil, &cfg)
 
 	resp := doAdminJSONRequest(t, engine, http.MethodPost, "/admin/api/workers/worker-cron-invalid/crons/create", map[string]any{
 		"cron": "invalid cron",
 	})
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("非法 cron 表达式应返回 400: code=%d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestAdminConfigAPIIncludesAndUpdatesMCPConfig(t *testing.T) {
+	store := openAdminTestStore(t)
+	cfg := config.Config{
+		AdminPrefix: "/admin",
+		AdminToken:  "test-token",
+		DataDir:     t.TempDir(),
+		AppConfig: config.AppConfig{
+			MCP_Enable: false,
+			MCP_Token:  "",
+		},
+	}
+	engine := NewEngine(store, router.New(), nil, &cfg)
+
+	getResp := doAdminJSONRequest(t, engine, http.MethodGet, "/admin/api/config", nil)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("读取配置接口返回错误: code=%d body=%s", getResp.Code, getResp.Body.String())
+	}
+
+	var getBody struct {
+		Data []message.AdminConfigItem `json:"data"`
+	}
+	if err := json.Unmarshal(getResp.Body.Bytes(), &getBody); err != nil {
+		t.Fatalf("解析配置读取响应失败: %v", err)
+	}
+
+	foundEnable := false
+	foundToken := false
+	for _, item := range getBody.Data {
+		if item.Key == "MCP_ENABLE" {
+			foundEnable = true
+		}
+		if item.Key == "MCP_TOKEN" {
+			foundToken = true
+		}
+	}
+	if !foundEnable || !foundToken {
+		t.Fatalf("配置列表未包含 MCP 配置项: %#v", getBody.Data)
+	}
+
+	updateResp := doAdminJSONRequest(t, engine, http.MethodPost, "/admin/api/config", map[string]any{
+		"app_config": map[string]any{
+			"MCP_ENABLE": "true",
+			"MCP_TOKEN":  "new-mcp-token",
+		},
+	})
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("更新配置接口返回错误: code=%d body=%s", updateResp.Code, updateResp.Body.String())
+	}
+
+	if cfg.AppConfig.MCP_Enable != true {
+		t.Fatalf("期望 MCP_ENABLE 已更新为 true")
+	}
+	if cfg.AppConfig.MCP_Token != "new-mcp-token" {
+		t.Fatalf("期望 MCP_TOKEN 已更新，实际为 %q", cfg.AppConfig.MCP_Token)
+	}
+}
+
+func TestUpdateWorkerWithoutRuntimeField(t *testing.T) {
+	store := openAdminTestStore(t)
+	createAdminTestWorker(t, store, "worker-update-http")
+
+	cfg := config.Config{
+		AdminPrefix: "/admin",
+		AdminToken:  "test-token",
+		DataDir:     t.TempDir(),
+	}
+	engine := NewEngine(store, router.New(), nil, &cfg)
+
+	resp := doAdminJSONRequest(t, engine, http.MethodPost, "/admin/api/workers/update", map[string]any{
+		"id":         "worker-update-http",
+		"name":       "更新后的 Worker",
+		"route":      "/worker-update-http-v2",
+		"timeout_ms": 4500,
+		"enabled":    true,
+	})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("不携带 runtime 的更新接口应返回 200: code=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var body struct {
+		Data model.Worker `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("解析更新接口响应失败: %v", err)
+	}
+	if body.Data.Runtime != "python" {
+		t.Fatalf("更新时不应修改 runtime: %#v", body.Data)
+	}
+	if body.Data.Route != "/worker-update-http-v2" {
+		t.Fatalf("更新后的 route 不正确: %#v", body.Data)
 	}
 }
