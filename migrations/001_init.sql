@@ -1,6 +1,7 @@
 CREATE TABLE worker (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
     runtime TEXT NOT NULL CHECK(runtime IN ('python','node')),
     route TEXT NOT NULL UNIQUE,
     timeout_ms INTEGER NOT NULL DEFAULT 5000,

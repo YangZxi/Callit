@@ -40,19 +40,21 @@ type WorkerService struct {
 }
 
 type CreateWorkerInput struct {
-	Name      string
-	Runtime   string
-	Route     string
-	TimeoutMS int
-	Enabled   *bool
+	Name        string
+	Description string
+	Runtime     string
+	Route       string
+	TimeoutMS   int
+	Enabled     *bool
 }
 
 type UpdateWorkerInput struct {
-	ID        string
-	Name      string
-	Route     string
-	TimeoutMS int
-	Enabled   *bool
+	ID          string
+	Name        string
+	Description string
+	Route       string
+	TimeoutMS   int
+	Enabled     *bool
 }
 
 type FileContent struct {
@@ -98,12 +100,13 @@ func (s *WorkerService) CreateWorker(ctx context.Context, input CreateWorkerInpu
 	}
 
 	worker := model.Worker{
-		ID:        uuid.NewString(),
-		Name:      strings.TrimSpace(input.Name),
-		Runtime:   strings.TrimSpace(input.Runtime),
-		Route:     strings.TrimSpace(input.Route),
-		TimeoutMS: timeoutMS,
-		Enabled:   enabled,
+		ID:          uuid.NewString(),
+		Name:        strings.TrimSpace(input.Name),
+		Description: strings.TrimSpace(input.Description),
+		Runtime:     strings.TrimSpace(input.Runtime),
+		Route:       strings.TrimSpace(input.Route),
+		TimeoutMS:   timeoutMS,
+		Enabled:     enabled,
 	}
 	if err := worker.Validate(); err != nil {
 		return model.Worker{}, err
@@ -155,12 +158,13 @@ func (s *WorkerService) UpdateWorker(ctx context.Context, input UpdateWorkerInpu
 	}
 
 	updating := model.Worker{
-		ID:        id,
-		Name:      strings.TrimSpace(input.Name),
-		Runtime:   origin.Runtime,
-		Route:     strings.TrimSpace(input.Route),
-		TimeoutMS: timeoutMS,
-		Enabled:   enabled,
+		ID:          id,
+		Name:        strings.TrimSpace(input.Name),
+		Description: strings.TrimSpace(input.Description),
+		Runtime:     origin.Runtime,
+		Route:       strings.TrimSpace(input.Route),
+		TimeoutMS:   timeoutMS,
+		Enabled:     enabled,
 	}
 	if err := updating.Validate(); err != nil {
 		return model.Worker{}, err

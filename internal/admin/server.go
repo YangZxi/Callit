@@ -229,18 +229,19 @@ func (s *Server) createWorker(c *gin.Context) {
 	}
 
 	created, err := s.workerSvc.CreateWorker(c.Request.Context(), CreateWorkerInput{
-		Name:      req.Name,
-		Runtime:   req.Runtime,
-		Route:     req.Route,
-		TimeoutMS: req.TimeoutMS,
-		Enabled:   req.Enabled,
+		Name:        req.Name,
+		Description: req.Description,
+		Runtime:     req.Runtime,
+		Route:       req.Route,
+		TimeoutMS:   req.TimeoutMS,
+		Enabled:     req.Enabled,
 	})
 	if err != nil {
 		if errors.Is(err, ErrWorkerRouteExists) {
 			apiError(c, http.StatusConflict, "路由已存在")
 			return
 		}
-		if strings.Contains(err.Error(), "不能为空") || strings.Contains(err.Error(), "仅支持") || strings.Contains(err.Error(), "必须") || strings.Contains(err.Error(), "不合法") {
+		if strings.Contains(err.Error(), "不能为空") || strings.Contains(err.Error(), "仅支持") || strings.Contains(err.Error(), "必须") || strings.Contains(err.Error(), "不合法") || strings.Contains(err.Error(), "不能超过") {
 			apiError(c, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -267,11 +268,12 @@ func (s *Server) updateWorker(c *gin.Context) {
 	}
 
 	updated, err := s.workerSvc.UpdateWorker(c.Request.Context(), UpdateWorkerInput{
-		ID:        id,
-		Name:      req.Name,
-		Route:     req.Route,
-		TimeoutMS: req.TimeoutMS,
-		Enabled:   req.Enabled,
+		ID:          id,
+		Name:        req.Name,
+		Description: req.Description,
+		Route:       req.Route,
+		TimeoutMS:   req.TimeoutMS,
+		Enabled:     req.Enabled,
 	})
 	if err != nil {
 		if errors.Is(err, ErrWorkerNotFound) {
@@ -282,7 +284,7 @@ func (s *Server) updateWorker(c *gin.Context) {
 			apiError(c, http.StatusConflict, "路由已存在")
 			return
 		}
-		if strings.Contains(err.Error(), "不能为空") || strings.Contains(err.Error(), "仅支持") || strings.Contains(err.Error(), "必须") {
+		if strings.Contains(err.Error(), "不能为空") || strings.Contains(err.Error(), "仅支持") || strings.Contains(err.Error(), "必须") || strings.Contains(err.Error(), "不能超过") {
 			apiError(c, http.StatusBadRequest, err.Error())
 			return
 		}

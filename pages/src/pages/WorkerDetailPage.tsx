@@ -16,6 +16,7 @@ import { useTheme } from "@/lib/theme";
 type WorkerItem = {
   id: string;
   name: string;
+  description: string;
   runtime: "python" | "node";
   route: string;
   timeout_ms: number;

@@ -9,6 +9,7 @@ import WorkerCronList from "@/components/worker-cron-list";
 type WorkerItem = {
   id: string;
   name: string;
+  description: string;
   runtime: "python" | "node";
   route: string;
   timeout_ms: number;
@@ -19,6 +20,7 @@ type WorkerItem = {
 
 type CreateWorkerForm = {
   name: string;
+  description: string;
   runtime: "python" | "node";
   route: string;
   timeoutMS: string;
@@ -29,6 +31,7 @@ type ModalMode = "create" | "edit";
 
 const initialForm: CreateWorkerForm = {
   name: "",
+  description: "",
   runtime: "python",
   route: "",
   timeoutMS: "5000",
@@ -87,6 +90,10 @@ export default function WorkerListPage() {
       addToast({ title: "name 不能为空", color: "warning", variant: "flat", timeout: 2500 });
       return;
     }
+    if ([...form.description].length > 200) {
+      addToast({ title: "description 不能超过 200 字符", color: "warning", variant: "flat", timeout: 2500 });
+      return;
+    }
     if (!form.route.trim().startsWith("/")) {
       addToast({ title: "route 必须以 / 开头", color: "warning", variant: "flat", timeout: 2500 });
       return;
@@ -104,6 +111,7 @@ export default function WorkerListPage() {
       if (modalMode === "create") {
         await api.post<WorkerItem>("/workers/create", {
           name: form.name.trim(),
+          description: form.description.trim(),
           runtime: form.runtime,
           route: form.route.trim(),
           timeout_ms: timeout,
@@ -113,6 +121,7 @@ export default function WorkerListPage() {
         await api.post<WorkerItem>("/workers/update", {
           id: editingID,
           name: form.name.trim(),
+          description: form.description.trim(),
           route: form.route.trim(),
           timeout_ms: timeout,
           enabled: form.enabled,
@@ -140,6 +149,7 @@ export default function WorkerListPage() {
     setEditingID(item.id);
     setForm({
       name: item.name,
+      description: item.description || "",
       runtime: item.runtime,
       route: item.route,
       timeoutMS: String(item.timeout_ms),
@@ -312,6 +322,13 @@ export default function WorkerListPage() {
       >
         <form className="flex flex-col gap-3" onSubmit={onCreateSubmit}>
           <Input isRequired label="Worker 名" value={form.name} onValueChange={(value) => setForm((prev) => ({ ...prev, name: value }))} />
+          <Input
+            description={`${[...form.description].length}/200`}
+            label="描述"
+            maxLength={200}
+            value={form.description}
+            onValueChange={(value) => setForm((prev) => ({ ...prev, description: value }))}
+          />
           <Input isRequired label="路由" value={form.route} onValueChange={(value) => setForm((prev) => ({ ...prev, route: value }))} />
           <Select
             isDisabled={modalMode === "edit"}

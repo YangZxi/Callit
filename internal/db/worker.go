@@ -23,14 +23,15 @@ func (dao *WorkerDAO) Create(ctx context.Context, worker model.Worker) (model.Wo
 	worker.CreatedAt = now
 	worker.UpdatedAt = now
 	if err := dao.db.WithContext(ctx).Model(&model.Worker{}).Create(map[string]any{
-		"id":         worker.ID,
-		"name":       worker.Name,
-		"runtime":    worker.Runtime,
-		"route":      worker.Route,
-		"timeout_ms": worker.TimeoutMS,
-		"enabled":    worker.Enabled,
-		"created_at": worker.CreatedAt,
-		"updated_at": worker.UpdatedAt,
+		"id":          worker.ID,
+		"name":        worker.Name,
+		"description": worker.Description,
+		"runtime":     worker.Runtime,
+		"route":       worker.Route,
+		"timeout_ms":  worker.TimeoutMS,
+		"enabled":     worker.Enabled,
+		"created_at":  worker.CreatedAt,
+		"updated_at":  worker.UpdatedAt,
 	}).Error; err != nil {
 		return model.Worker{}, err
 	}
@@ -80,12 +81,13 @@ func (dao *WorkerDAO) Update(ctx context.Context, worker model.Worker) (model.Wo
 		Model(&model.Worker{}).
 		Where("id = ?", worker.ID).
 		Updates(map[string]any{
-			"name":       worker.Name,
-			"runtime":    worker.Runtime,
-			"route":      worker.Route,
-			"timeout_ms": worker.TimeoutMS,
-			"enabled":    worker.Enabled,
-			"updated_at": now,
+			"name":        worker.Name,
+			"description": worker.Description,
+			"runtime":     worker.Runtime,
+			"route":       worker.Route,
+			"timeout_ms":  worker.TimeoutMS,
+			"enabled":     worker.Enabled,
+			"updated_at":  now,
 		})
 	if result.Error != nil {
 		return model.Worker{}, result.Error
