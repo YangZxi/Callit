@@ -1,5 +1,6 @@
-import { Button, ScrollShadow, Tab, Tabs } from "@heroui/react";
+import { ScrollShadow, Tab, Tabs } from "@heroui/react";
 import { cn } from "@heroui/react";
+import { Button } from "@heroui/react";
 
 import type { ChatMessage, ChatMode } from "./chatbox";
 import PromptInputWithBottomActions from "./prompt-input-with-bottom-actions";
@@ -39,20 +40,30 @@ export default function PromptContainerWithConversation(props: Props) {
       <div className="border-b-small border-divider flex w-full items-center justify-between gap-2 pb-2">
         <p className="text-base font-medium">Callit AI</p>
         <div className="flex items-center gap-2">
-          <Tabs
-            aria-label="聊天模式"
+          <Tabs 
+            className="w-full max-w-md"
+            aria-label="chat session mode"
             selectedKey={mode}
-            size="sm"
             onSelectionChange={(key) => {
               if (key === "chat" || key === "agent") {
                 onModeChange(key);
               }
             }}
           >
-            <Tab key="chat" title="Chat" />
-            <Tab key="agent" title="Agent" />
+            <Tabs.ListContainer>
+              <Tabs.List aria-label="Options">
+                <Tabs.Tab id="chat">
+                  Chat
+                  <Tabs.Indicator />
+                </Tabs.Tab>
+                <Tabs.Tab id="agent">
+                  Agent
+                  <Tabs.Indicator />
+                </Tabs.Tab>
+              </Tabs.List>
+            </Tabs.ListContainer>
           </Tabs>
-          <Button color="default" size="sm" variant="flat" isDisabled={sending} onPress={onClearSession}>
+          <Button size="sm" variant="secondary" isDisabled={sending} onPress={onClearSession}>
             清空
           </Button>
         </div>
@@ -62,7 +73,7 @@ export default function PromptContainerWithConversation(props: Props) {
         <Conversation loading={loading} messages={messages} />
       </ScrollShadow>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 bg-[#f4f4f5]">
         <PromptInputWithBottomActions
           files={files}
           sending={sending}

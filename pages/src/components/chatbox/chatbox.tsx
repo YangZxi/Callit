@@ -1,7 +1,7 @@
 import React from "react";
-import { Avatar, Badge, addToast } from "@heroui/react";
+import { Avatar, Badge, toast } from "@heroui/react";
 
-import api, { API_BASE } from "@/lib/api";
+import api, { BASE_API } from "@/lib/api";
 
 import PromptContainerWithConversation from "./prompt-container-with-conversation";
 import { OpenAIIcon } from "../icons";
@@ -37,7 +37,7 @@ async function streamChat(
   payload: { mode: ChatMode; message: string; history_limit: number },
   onEvent: (event: SSEEvent) => void,
 ) {
-  const res = await fetch(`${API_BASE}/workers/${workerId}/chat/stream`, {
+  const res = await fetch(`${BASE_API}/workers/${workerId}/chat/stream`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -125,7 +125,7 @@ async function streamChat(
 
 export default function Chatbox({ workerId, onFilesChanged }: ChatboxProps) {
   const [chatOpen, setChatOpen] = React.useState(false);
-  const [mode, setMode] = React.useState<ChatMode>("chat");
+  const [mode, setMode] = React.useState<ChatMode>("agent");
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [files, setFiles] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -158,7 +158,7 @@ export default function Chatbox({ workerId, onFilesChanged }: ChatboxProps) {
     if (!workerId || sending) return;
     await api.post<{ ok: boolean }>(`/workers/${workerId}/chat/session/clear`);
     setMessages([]);
-    addToast({ title: "会话已清空", color: "success", variant: "flat", timeout: 1500 });
+    toast.success("会话已清空");
   }, [workerId, sending]);
 
   const handleUpload = React.useCallback(async (selected: FileList) => {
@@ -217,7 +217,7 @@ export default function Chatbox({ workerId, onFilesChanged }: ChatboxProps) {
           }
           if (event.event === "error") {
             const msg = event.data?.message || "聊天失败";
-            addToast({ title: msg, color: "danger", variant: "flat", timeout: 2200 });
+            toast.danger(msg);
           }
         },
       );
@@ -226,7 +226,7 @@ export default function Chatbox({ workerId, onFilesChanged }: ChatboxProps) {
       await onFilesChanged?.();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "聊天失败";
-      addToast({ title: msg, color: "danger", variant: "flat", timeout: 2200 });
+      toast.danger(msg);
       setMessages((prev) =>
         prev.map((item) =>
           item.id === assistantID && !item.content
@@ -242,7 +242,7 @@ export default function Chatbox({ workerId, onFilesChanged }: ChatboxProps) {
   return (
     <div className="flex flex-col items-end gap-3">
       {chatOpen ? (
-        <div className="h-[500px] w-[520px] p-2 overflow-hidden rounded-xl border border-default-200 bg-background shadow-2xl">
+        <div className="h-[500px] w-[520px] p-2 overflow-hidden rounded-4xl border border-default-200 bg-background shadow-2xl">
           <main className="flex h-full min-h-0">
             <div className="relative flex h-full min-h-0 w-full flex-col gap-2">
               <PromptContainerWithConversation
@@ -262,18 +262,19 @@ export default function Chatbox({ workerId, onFilesChanged }: ChatboxProps) {
           </main>
         </div>
       ) : null}
-      <button
-        type="button"
-        aria-label={chatOpen ? "收起聊天窗口" : "展开聊天窗口"}
-        className="rounded-xl transition-transform hover:scale-105"
-        onClick={() => setChatOpen((prev) => !prev)}
-      >
-        <Badge color="secondary" content={messages.length > 0 ? String(messages.length) : 0} variant="solid">
-          <Avatar radius="md" 
-            icon={<OpenAIIcon />}
-          />
+      <Badge.Anchor>
+        <Avatar
+          color={"accent"} variant={"soft"}
+          className="hover:cursor-pointer rounded-lg"
+          onClick={() => setChatOpen((prev) => !prev)}
+        >
+          <Avatar.Image src={""} />
+          <Avatar.Fallback className="rounded-lg"><OpenAIIcon /></Avatar.Fallback>
+        </Avatar>
+        <Badge color="danger" size="sm">
+          {messages.length > 0 ? String(messages.length) : 0}
         </Badge>
-      </button>
+      </Badge.Anchor>
     </div>
   );
 }

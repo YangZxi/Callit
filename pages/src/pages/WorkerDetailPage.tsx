@@ -1,5 +1,5 @@
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Chip, Listbox, ListboxItem, addToast } from "@heroui/react";
+import { Chip, ListBox, toast } from "@heroui/react";
 import Editor, { DiffEditor, MonacoDiffEditor, OnMount } from "@monaco-editor/react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { IDisposable } from "monaco-editor";
@@ -12,6 +12,7 @@ import XModal from "@/components/modal";
 import WorkerLogList, { WorkerLogItem } from "@/components/worker-log-list";
 import { Icon } from "@iconify/react";
 import { useTheme } from "@/lib/theme";
+import { Button } from "@heroui/react";
 
 type WorkerItem = {
   id: string;
@@ -82,7 +83,6 @@ export default function WorkerDetailPage() {
   const [saving, setSaving] = useState(false);
   const [fileBusy, setFileBusy] = useState(false);
   const [fnBusy, setFnBusy] = useState(false);
-  const [httpDrawerOpen, setHttpDrawerOpen] = useState(false);
   const [logModalOpen, setLogModalOpen] = useState(false);
   const [logLoading, setLogLoading] = useState(false);
   const [logPage, setLogPage] = useState(1);
@@ -182,7 +182,7 @@ export default function WorkerDetailPage() {
 
   useEffect(() => {
     if (!id) {
-      addToast({ title: "缺少 WorkerId", color: "danger", variant: "flat", timeout: 2500 });
+      toast.danger("缺少 WorkerId");
       navigate("/workers", { replace: true });
       return;
     }
@@ -217,11 +217,11 @@ export default function WorkerDetailPage() {
   const saveCurrentFile = useCallback(async () => {
     if (!selectedFile || saving) return;
     if (isDiffMode) {
-      addToast({ title: "当前为 Diff 模式，请使用“应用并清理 diff”", color: "warning", variant: "flat", timeout: 2200 });
+      toast.warning("当前为 Diff 模式，请使用“应用并清理 diff”");
       return;
     }
     if (fileMediaType === "image") {
-      addToast({ title: "图片预览文件不支持在线编辑", color: "warning", variant: "flat", timeout: 2200 });
+      toast.warning("图片预览文件不支持在线编辑");
       return;
     }
     setSaving(true);
@@ -230,16 +230,16 @@ export default function WorkerDetailPage() {
         filename: selectedFile,
         content,
       });
-      addToast({ title: "保存成功", color: "success", variant: "flat", timeout: 1800 });
+      toast.success("保存成功");
       await loadFiles(selectedFile);
     } finally {
       setSaving(false);
     }
   }, [selectedFile, saving, isDiffMode, fileMediaType, id, content, loadFiles]);
 
-	const applyDiffMerge = useCallback(async () => {
-		if (!activeDiffFile || !selectedFile || saving || fileBusy) return;
-		const ok = window.confirm(`将 ${activeDiffFile} 的内容合并回 ${selectedFile} 并删除 diff 文件，确认继续？`);
+  const applyDiffMerge = useCallback(async () => {
+    if (!activeDiffFile || !selectedFile || saving || fileBusy) return;
+    const ok = window.confirm(`将 ${activeDiffFile} 的内容合并回 ${selectedFile} 并删除 diff 文件，确认继续？`);
     if (!ok) return;
 
     setSaving(true);
@@ -251,30 +251,30 @@ export default function WorkerDetailPage() {
       await api.post<{ ok: boolean }>(`/workers/${id}/files/delete`, {
         filename: activeDiffFile,
       });
-      addToast({ title: "合并完成", color: "success", variant: "flat", timeout: 1800 });
+      toast.success("合并完成");
       await loadFiles(selectedFile);
       await loadFileContent(selectedFile);
     } finally {
       setSaving(false);
     }
-	}, [activeDiffFile, selectedFile, saving, fileBusy, id, content, loadFiles, loadFileContent]);
+  }, [activeDiffFile, selectedFile, saving, fileBusy, id, content, loadFiles, loadFileContent]);
 
-	const cancelDiffMerge = useCallback(async () => {
-		if (!activeDiffFile || fileBusy) return;
-		setFileBusy(true);
-		try {
-			await api.post<{ ok: boolean }>(`/workers/${id}/files/delete`, {
+  const cancelDiffMerge = useCallback(async () => {
+    if (!activeDiffFile || fileBusy) return;
+    setFileBusy(true);
+    try {
+      await api.post<{ ok: boolean }>(`/workers/${id}/files/delete`, {
         filename: activeDiffFile,
       });
-			addToast({ title: "已取消 Diff 合并", color: "warning", variant: "flat", timeout: 1800 });
-			await loadFiles(selectedFile || undefined);
-			if (selectedFile) {
-				await loadFileContent(selectedFile);
-			}
-		} finally {
-			setFileBusy(false);
-		}
-	}, [activeDiffFile, fileBusy, id, loadFiles, loadFileContent, selectedFile]);
+      toast.warning("已取消 Diff 合并");
+      await loadFiles(selectedFile || undefined);
+      if (selectedFile) {
+        await loadFileContent(selectedFile);
+      }
+    } finally {
+      setFileBusy(false);
+    }
+  }, [activeDiffFile, fileBusy, id, loadFiles, loadFileContent, selectedFile]);
 
   useEffect(() => {
     saveCurrentFileRef.current = isDiffMode ? applyDiffMerge : saveCurrentFile;
@@ -354,7 +354,7 @@ export default function WorkerDetailPage() {
         new_filename: clean,
       });
       const renamed = data.filename || clean;
-      addToast({ title: "重命名成功", color: "success", variant: "flat", timeout: 1800 });
+      toast.success("重命名成功");
       await loadFiles(renamed);
       await loadFileContent(renamed);
     } finally {
@@ -442,12 +442,12 @@ export default function WorkerDetailPage() {
   }
 
   return (
-    <section className="relative h-[calc(var(--main-height)-36px)] py-2">
+    <section className="relative h-[calc(var(--main-height)-36px)]">
       <div className="flex h-full flex-col overflow-hidden rounded-xl border border-default-200 bg-background/70">
         <div className="border-b border-default-200 p-2">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <Button color="default" size="sm" variant="flat"
+              <Button size="sm" variant="secondary"
                 isIconOnly
                 onPress={() => navigate(`${window.__BASE_PREFIX__}/workers`)}
               >
@@ -456,7 +456,7 @@ export default function WorkerDetailPage() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h1 className="truncate text-base font-semibold text-default-900">{workerInfo.name}</h1>
-                  <Chip color={workerInfo.enabled ? "success" : "default"} size="sm" variant="flat">
+                  <Chip color={workerInfo.enabled ? "success" : "default"} size="sm" variant="soft">
                     {workerInfo.enabled ? "已启用" : "已停用"}
                   </Chip>
                 </div>
@@ -466,34 +466,40 @@ export default function WorkerDetailPage() {
               </div>
             </div>
             <div className="flex items-center justify-end gap-2">
-              <Button color="primary" size="sm" variant="flat" onPress={() => setHttpDrawerOpen(true)}>Testing</Button>
-              <Button color="secondary" size="sm" variant="flat" onPress={openWorkerLogsModal}>运行日志</Button>
-              <Button color={workerInfo.enabled ? "warning" : "success"} isLoading={fnBusy} size="sm" variant="flat" onPress={toggleWorkerEnabled}>
-                {workerInfo.enabled ? "停用 Worker" : "启用 Worker"}
+              <HttpDrawer defaultUrl={defaultRunUrl} />
+              <Button size="sm" variant="secondary" onPress={openWorkerLogsModal}>运行日志</Button>
+              <Button
+                isPending={fnBusy}
+                size="sm"
+                variant={workerInfo.enabled ? "tertiary" : "tertiary"}
+                className={workerInfo.enabled ? "border-warning text-warning" : undefined}
+                onPress={toggleWorkerEnabled}
+              >
+                {workerInfo.enabled ? "停用" : "启用"}
               </Button>
-              <Button color="danger" isLoading={fnBusy} size="sm" variant="flat" onPress={removeWorker}>删除 Worker</Button>
+              <Button isPending={fnBusy} size="sm" variant="danger-soft" onPress={removeWorker}>删除 Worker</Button>
             </div>
           </div>
         </div>
         <div className="flex min-h-0 flex-1">
           <aside className="flex min-h-0 w-[150px] shrink-0 flex-col border-r border-default-200">
             <div className="p-2 border-b border-default-200 flex flex-col gap-2">
-              <Button color="default" size="sm" variant="flat" onPress={() => uploadRef.current?.click()}>
+              <Button className="w-full" size="sm" variant="tertiary" onPress={() => uploadRef.current?.click()}>
                 上传文件
               </Button>
-              <Button color="default" isLoading={fileBusy} size="sm" variant="flat" onPress={createFile}>
+              <Button className="w-full" isPending={fileBusy} size="sm" variant="tertiary" onPress={createFile}>
                 新建文件
               </Button>
               <input ref={uploadRef} multiple className="hidden" type="file" onChange={uploadFiles} />
             </div>
             <div className="flex-1 min-h-0 overflow-auto">
-              <Listbox
+              <ListBox
                 aria-label="Worker 文件列表"
                 className="p-1"
-                disallowEmptySelection
                 selectedKeys={selectedKeys}
                 selectionMode="single"
                 onSelectionChange={(keys) => {
+                  console.log("selected keys", keys);
                   if (keys === "all") return;
                   const first = Array.from(keys)[0];
                   if (typeof first === "string") {
@@ -502,9 +508,12 @@ export default function WorkerDetailPage() {
                 }}
               >
                 {files.map((file) => (
-                  <ListboxItem key={file}>{file}</ListboxItem>
+                  <ListBox.Item key={file} id={file} textValue={file}>
+                    {file}
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
                 ))}
-              </Listbox>
+              </ListBox>
             </div>
           </aside>
 
@@ -521,28 +530,27 @@ export default function WorkerDetailPage() {
                 ) : null}
               </div>
               <div className="flex items-center gap-2">
-				{isDiffMode ? (
-					<>
-						<Button
-							color="warning"
-							size="sm"
-							variant="flat"
-							isDisabled={saving || fileBusy}
-							onPress={applyDiffMerge}
-						>
-							应用 Diff
-						</Button>
-						<Button
-							color="default"
-							size="sm"
-							variant="flat"
-							isDisabled={saving || fileBusy}
-							onPress={cancelDiffMerge}
-						>
-							取消 Diff
-						</Button>
-					</>
-				) : null}
+                {isDiffMode ? (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-orange-300 text-orange-400"
+                      isDisabled={saving || fileBusy}
+                      onPress={applyDiffMerge}
+                    >
+                      应用 Diff
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      isDisabled={saving || fileBusy}
+                      onPress={cancelDiffMerge}
+                    >
+                      取消 Diff
+                    </Button>
+                  </>
+                ) : null}
                 <EditorPanelAction
                   loading={saving}
                   disabled={!selectedFile || fileBusy}
@@ -608,10 +616,9 @@ export default function WorkerDetailPage() {
           </div>
         </div>
       </div>
-      <HttpDrawer isOpen={httpDrawerOpen} onClose={() => setHttpDrawerOpen(false)} defaultUrl={defaultRunUrl} />
       <XModal
         isOpen={logModalOpen}
-        size="5xl"
+        size="cover"
         header="最近运行日志"
         onOpenChange={(open) => {
           setLogModalOpen(open);
@@ -632,9 +639,9 @@ export default function WorkerDetailPage() {
           onPageChange={setLogPage}
         />
       </XModal>
-      <div className="absolute bottom-4 right-4 z-40">
+      {/* <div className="absolute bottom-4 right-4 z-40">
         <Chatbox workerId={id} onFilesChanged={handleChatFilesChanged} />
-      </div>
+      </div> */}
     </section>
   );
 }

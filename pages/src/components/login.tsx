@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { Button, Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, useDisclosure, addToast } from "@heroui/react";
+import { Modal, useDisclosure, toast } from "@heroui/react";
+import { Button } from "@heroui/react";
+import { Input } from "@/components/heroui";
 
 import api, { ApiResponse } from "@/lib/api";
 import { UserProfile } from "@/types/user";
@@ -34,14 +36,9 @@ export default function Login() {
       });
       setUser(profile);
       onClose();
-      addToast({ title: "登录成功", color: "success", variant: "flat" });
+      toast.success("登录成功");
     } catch (err) {
-      addToast({
-        title: "登录失败",
-        description: (err as ApiResponse<unknown>).msg,
-        color: "danger",
-        variant: "flat",
-      });
+      toast.danger("登录失败", { description: (err as ApiResponse<unknown>).msg });
     }
   };
 
@@ -57,32 +54,51 @@ export default function Login() {
   return (
     <>
       {user ? (
-        <Button className={btnClassName} startContent={null} variant="light" onPress={logoutHandler}>
+        <Button className={btnClassName} variant="tertiary" onPress={logoutHandler}>
           {user.nickname || user.username} 退出登录
         </Button>
       ) : (
-        <Button color="primary" size="sm" startContent={null} variant="ghost" onPress={onOpen}>
+        <Button size="sm" variant="ghost" onPress={onOpen}>
           登录
         </Button>
       )}
 
-      <Modal isDismissable={false} isKeyboardDismissDisabled isOpen={isOpen} onOpenChange={onOpenChange}>
-        <ModalContent>
-          {() => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">登录</ModalHeader>
-              <ModalBody>
+      <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
+        <Modal.Backdrop isDismissable={false} isKeyboardDismissDisabled>
+          <Modal.Container>
+            <Modal.Dialog>
+              <Modal.Header className="flex flex-col gap-1">
+                <Modal.Heading>登录</Modal.Heading>
+              </Modal.Header>
+              <Modal.Body>
                 <div className="space-y-3">
-                  <Input label="用户名" name="username" placeholder="请输入用户名户名" type="text" onValueChange={(value) => setUsername(value)} />
-                  <Input label="密码" name="password" placeholder="请输入密码" type="password" onValueChange={(value) => setPassword(value)} />
+                  <Input
+                    isRequired
+                    label="用户名"
+                    name="username"
+                    placeholder="请输入用户名户名"
+                    type="text"
+                    value={username}
+                    onValueChange={setUsername}
+                  />
+                  <Input
+                    isRequired
+                    label="密码"
+                    name="password"
+                    placeholder="请输入密码"
+                    type="password"
+                    value={password}
+                    onValueChange={setPassword}
+                  />
                 </div>
-              </ModalBody>
-              <ModalFooter>
-                <Button color="danger" variant="light" onPress={onClose}>
+              </Modal.Body>
+              <Modal.Footer>
+                <Button variant="danger-soft" onPress={onClose}>
                   取消
                 </Button>
-                <Button color="primary" 
-                  onPress={loginHandler} 
+                <Button
+                  variant="primary"
+                  onPress={loginHandler}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       loginHandler();
@@ -91,10 +107,10 @@ export default function Login() {
                 >
                   登录
                 </Button>
-              </ModalFooter>
-            </>
-          )}
-        </ModalContent>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
       </Modal>
     </>
   );
