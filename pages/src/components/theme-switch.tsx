@@ -1,84 +1,47 @@
-import { FC, useState, useEffect } from "react";
-import { VisuallyHidden } from "@react-aria/visually-hidden";
-import { SwitchProps, useSwitch } from "@heroui/switch";
+import { FC, useEffect, useState } from "react";
 import clsx from "clsx";
+import { Button } from "@heroui/react";
 
 import { useTheme } from "@/lib/theme.ts";
 import { SunFilledIcon, MoonFilledIcon } from "@/components/icons.tsx";
 
 export interface ThemeSwitchProps {
   className?: string;
-  classNames?: SwitchProps["classNames"];
 }
 
 export const ThemeSwitch: FC<ThemeSwitchProps> = ({
   className,
-  classNames,
 }) => {
   const [isMounted, setIsMounted] = useState(false);
-
   const { theme, toggleTheme } = useTheme();
-
-  const onChange = toggleTheme;
-
-  const {
-    Component,
-    slots,
-    isSelected,
-    getBaseProps,
-    getInputProps,
-    getWrapperProps,
-  } = useSwitch({
-    isSelected: theme === "dark",
-    onChange,
-  });
+  const isSelected = theme === "dark";
 
   useEffect(() => {
     setIsMounted(true);
-  }, [isMounted]);
+  }, []);
 
-  // Prevent Hydration Mismatch
-  if (!isMounted) return <div className="w-6 h-6" />;
+  if (!isMounted) {
+    return <span className="inline-flex h-9 w-9" aria-hidden="true" />;
+  }
 
   return (
-    <Component
-      aria-label={isSelected ? "Switch to dark mode" : "Switch to light mode"}
-      {...getBaseProps({
-        className: clsx(
-          "px-px transition-opacity hover:opacity-80 cursor-pointer",
-          className,
-          classNames?.base,
-        ),
-      })}
+    <Button
+      isIconOnly
+      variant="tertiary"
+      size="sm"
+      onPress={toggleTheme}
+      aria-label={isSelected ? "切换到浅色模式" : "切换到深色模式"}
+      aria-pressed={isSelected}
+      className={clsx(
+        "shrink-0",
+        className,
+      )}
     >
-      <VisuallyHidden>
-        <input {...getInputProps()} />
-      </VisuallyHidden>
-      <div
-        {...getWrapperProps()}
-        className={slots.wrapper({
-          class: clsx(
-            [
-              "w-auto h-auto",
-              "bg-transparent",
-              "rounded-lg",
-              "flex items-center justify-center",
-              "group-data-[selected=true]:bg-transparent",
-              "!text-default-500",
-              "pt-px",
-              "px-0",
-              "mx-0",
-            ],
-            classNames?.wrapper,
-          ),
-        })}
-      >
-        {isSelected ? (
-          <MoonFilledIcon size={22} />
-        ) : (
-          <SunFilledIcon size={22} />
-        )}
-      </div>
-    </Component>
+      {isSelected ? (
+        <MoonFilledIcon size={22} />
+      ) : (
+        <SunFilledIcon size={22} />
+      )}
+    </Button>
   );
 };

@@ -1,18 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-	Button,
-	Input,
 	Modal,
-	ModalBody,
-	ModalContent,
-	ModalFooter,
-	ModalHeader,
-	Tab,
 	Tabs,
-	addToast,
+	toast,
 } from "@heroui/react";
+import { Button } from "@heroui/react";
+import { Input } from "@/components/heroui";
 
-import api, { API_BASE } from "@/lib/api";
+import api, { BASE_API } from "@/lib/api";
 
 type RuntimeType = "node" | "python";
 type ManageAction = "install" | "remove";
@@ -31,7 +26,7 @@ async function streamDependencyManage(
 	payload: { runtime: RuntimeType; action: ManageAction; package: string },
 	onEvent: (event: SSEEvent) => void,
 ) {
-	const res = await fetch(`${API_BASE}/dependencies/manage`, {
+	const res = await fetch(`${BASE_API}/dependencies/manage`, {
 		method: "POST",
 		credentials: "include",
 		headers: {
@@ -159,7 +154,7 @@ export default function DependenciesPage() {
 		if (running) return;
 		const clean = packageName.trim();
 		if (!clean) {
-			addToast({ title: "依赖名不能为空", color: "warning", variant: "flat", timeout: 2000 });
+			toast.warning("依赖名不能为空");
 			return;
 		}
 
@@ -189,38 +184,35 @@ export default function DependenciesPage() {
 			);
 
 			if (doneOK) {
-				addToast({
-					title: action === "install" ? "依赖安装完成" : "依赖移除完成",
-					color: "success",
-					variant: "flat",
-					timeout: 1800,
-				});
+				toast.success(action === "install" ? "依赖安装完成" : "依赖移除完成");
 				await loadDependencies(runtime);
 			} else {
-				addToast({ title: "执行失败，请查看日志", color: "danger", variant: "flat", timeout: 2400 });
+				toast.danger("执行失败，请查看日志");
 			}
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : "依赖管理失败";
 			appendLog(`[error] ${msg}`);
-			addToast({ title: msg, color: "danger", variant: "flat", timeout: 2400 });
+			toast.danger(msg);
 		} finally {
 			setRunning(false);
 		}
 	};
 
 	return (
-		<section className="py-2 md:py-6 pb-4 md:pb-2">
+		<section className="pb-4 md:pb-2">
 			<div className="flex items-center justify-between gap-3">
 				<div className="flex flex-col gap-1">
 					<h1 className="text-3xl font-semibold text-default-900 dark:text-default-700">Dependencies</h1>
 					<p className="text-sm text-default-500">{title}</p>
 				</div>
-				<Button color="primary" onPress={openInstallModal}>安装依赖</Button>
+				<Button variant="primary" onPress={openInstallModal}>安装依赖</Button>
 			</div>
 
 			<div className="mt-4 rounded-xl border border-default-200 p-4">
 				<Tabs
 					aria-label="Dependencies Tabs"
+					className="w-[200px]"
+					orientation="horizontal"
 					selectedKey={runtime}
 					onSelectionChange={(key) => {
 						if (key === "node" || key === "python") {
@@ -228,8 +220,18 @@ export default function DependenciesPage() {
 						}
 					}}
 				>
-					<Tab key="node" title="Node" />
-					<Tab key="python" title="Python" />
+					<Tabs.ListContainer>
+						<Tabs.List aria-label="Dependencies Tabs">
+							<Tabs.Tab id="node">
+								Node
+								<Tabs.Indicator />
+							</Tabs.Tab>
+							<Tabs.Tab id="python">
+								Python
+								<Tabs.Indicator />
+							</Tabs.Tab>
+						</Tabs.List>
+					</Tabs.ListContainer>
 				</Tabs>
 
 				<div className="mt-4">
@@ -247,7 +249,7 @@ export default function DependenciesPage() {
 										<p className="truncate font-medium text-default-800">{item.name}</p>
 										<p className="text-xs text-default-500">{item.version || "-"}</p>
 									</div>
-									<Button color="danger" size="sm" variant="flat" onPress={() => openRemoveModal(item.name)}>
+									<Button size="sm" variant="danger-soft" onPress={() => openRemoveModal(item.name)}>
 										移除
 									</Button>
 								</div>
@@ -258,50 +260,52 @@ export default function DependenciesPage() {
 			</div>
 
 			<Modal
-				isDismissable={!running}
-				isKeyboardDismissDisabled={running}
 				isOpen={modalOpen}
 				onOpenChange={(open) => {
 					if (running) return;
 					setModalOpen(open);
 				}}
 			>
-				<ModalContent>
-					{(close) => (
-						<>
-							<ModalHeader>{action === "install" ? "安装依赖" : "移除依赖"}</ModalHeader>
-							<ModalBody>
-								<div className="flex items-end gap-2">
+				<Modal.Backdrop isDismissable={!running} isKeyboardDismissDisabled={running}>
+					<Modal.Container>
+						<Modal.Dialog>
+							<Modal.Header>
+								<Modal.Heading>{action === "install" ? "安装依赖" : "移除依赖"}</Modal.Heading>
+							</Modal.Header>
+							<Modal.Body>
+								<div className="flex items-end gap-2 mx-[2px]">
 									<Input
+										className="flex-1"
 										isDisabled={running || action === "remove"}
+										isRequired
 										label="依赖名"
-                    labelPlacement="outside"
+										name="package-name"
 										placeholder={runtime === "node" ? "例如 lodash" : "例如 requests"}
 										value={packageName}
 										onValueChange={setPackageName}
 									/>
-									<Button color={action === "install" ? "primary" : "danger"} isLoading={running} onPress={doManage}>
+									<Button variant={action === "install" ? "primary" : "danger"} isPending={running} onPress={doManage}>
 										{action === "install" ? "安装" : "移除"}
 									</Button>
 								</div>
-								<div className="h-64 overflow-auto rounded-lg border border-default-200 bg-default-100 p-3 font-mono text-xs whitespace-pre-wrap break-words">
+								<div className="mt-2 h-64 overflow-auto rounded-lg border border-default-200 bg-default-100 p-3 font-mono text-xs whitespace-pre-wrap break-words">
 									{logs.length > 0 ? logs.join("\n") : "等待执行..."}
 								</div>
-							</ModalBody>
-							<ModalFooter>
+							</Modal.Body>
+							<Modal.Footer>
 								<Button
-									variant="flat"
+									variant="secondary"
 									onPress={() => {
 										if (running) return;
-										close();
+										setModalOpen(false);
 									}}
 								>
 									关闭
 								</Button>
-							</ModalFooter>
-						</>
-					)}
-				</ModalContent>
+							</Modal.Footer>
+						</Modal.Dialog>
+					</Modal.Container>
+				</Modal.Backdrop>
 			</Modal>
 		</section>
 	);

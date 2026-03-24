@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Code, Input, Tooltip, addToast } from "@heroui/react";
+import { Alert, Tooltip, toast } from "@heroui/react";
+import { Button } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
 import api from "@/lib/api";
+import { Input } from "@/components/heroui";
 
 export type WorkerCronItem = {
   id: string;
@@ -109,7 +111,7 @@ export default function WorkerCronList({ workerId, isOpen }: WorkerCronListProps
 
     const cron = row.draft.trim();
     if (!cron) {
-      addToast({ title: "cron 不能为空", color: "warning", variant: "flat", timeout: 2500 });
+      toast.warning("cron 不能为空");
       return;
     }
 
@@ -149,22 +151,23 @@ export default function WorkerCronList({ workerId, isOpen }: WorkerCronListProps
 
   return (
     <div className="flex min-h-[220px] flex-col gap-3">
-      <Tooltip
-        content={
+      <Tooltip>
+        <Button isIconOnly variant="tertiary">
+          <Icon icon="ri:question-line" width={20} />
+        </Button>
+        <Tooltip.Content>
           <div className="text-sm flex flex-col gap-2">
             支持标准的 Cron 表达式格式，示例：
             <p>
               每小时的第 10 分钟执行
-              <Code>10 * * * *</Code>
+              <span className="ml-2 rounded bg-default-200 px-1.5 py-0.5 font-mono text-xs">10 * * * *</span>
             </p>
             <p>
               每 30 秒执行一次
-              <Code>*/30 * * * * *</Code>
+              <span className="ml-2 rounded bg-default-200 px-1.5 py-0.5 font-mono text-xs">*/30 * * * * *</span>
             </p>
           </div>
-        }
-      >
-        <Icon icon="ri:question-line" width={20} />
+        </Tooltip.Content>
       </Tooltip>
 
       {loading ? <p className="text-sm text-default-500">正在加载 Cron 列表...</p> : null}
@@ -184,8 +187,9 @@ export default function WorkerCronList({ workerId, isOpen }: WorkerCronListProps
               ) : (
                 <Input
                   autoFocus
+                  className="w-full"
+                  name={`cron-${row.key}`}
                   placeholder="请输入 cron 表达式"
-                  size="sm"
                   value={row.draft}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
@@ -200,15 +204,14 @@ export default function WorkerCronList({ workerId, isOpen }: WorkerCronListProps
 
             {row.mode === "view" ? (
               <>
-                <Button isIconOnly size="sm" variant="flat" onPress={() => startEdit(row.key)}>
+                <Button isIconOnly size="sm" variant="secondary" onPress={() => startEdit(row.key)}>
                   <Icon icon="solar:pen-2-linear" width={18} />
                 </Button>
                 <Button
                   isIconOnly
-                  color="danger"
-                  isLoading={row.deleting}
+                  isPending={row.deleting}
                   size="sm"
-                  variant="flat"
+                  variant="danger-soft"
                   onPress={() => {
                     void deleteRow(row.key);
                   }}
@@ -218,15 +221,14 @@ export default function WorkerCronList({ workerId, isOpen }: WorkerCronListProps
               </>
             ) : (
               <>
-                <Button isIconOnly size="sm" variant="flat" onPress={() => cancelEdit(row.key)}>
+                <Button isIconOnly size="sm" variant="secondary" onPress={() => cancelEdit(row.key)}>
                   <Icon icon="solar:close-circle-linear" width={18} />
                 </Button>
                 <Button
                   isIconOnly
-                  color="primary"
-                  isLoading={row.submitting}
+                  isPending={row.submitting}
                   size="sm"
-                  variant="flat"
+                  variant="primary"
                   onPress={() => {
                     void submitRow(row.key);
                   }}
@@ -242,10 +244,9 @@ export default function WorkerCronList({ workerId, isOpen }: WorkerCronListProps
       <div className="flex justify-end">
         <Button
           isIconOnly
-          color="primary"
           isDisabled={hasPendingCreate}
           size="sm"
-          variant="flat"
+          variant="primary"
           onPress={startCreate}
         >
           <Icon icon="lucide:circle-plus" width={20} />

@@ -1,4 +1,6 @@
-import { Button, Chip, Pagination } from "@heroui/react";
+import { Chip } from "@heroui/react";
+import { Button } from "@heroui/react";
+import Pagination from "@/components/heroui/Pagination";
 
 export type WorkerLogItem = {
   id: string;
@@ -61,9 +63,9 @@ function extractRequestURI(raw: string): string {
 
 function renderRunStatus(error: string) {
   if (error) {
-    return <Chip color="danger" size="sm" variant="flat">Error</Chip>;
+    return <Chip color="danger" size="sm" variant="soft">Error</Chip>;
   }
-  return <Chip color="success" size="sm" variant="flat">Success</Chip>;
+  return <Chip color="success" size="sm" variant="soft">Success</Chip>;
 }
 
 export default function WorkerLogList({
@@ -76,10 +78,14 @@ export default function WorkerLogList({
   onPageChange,
 }: WorkerLogListProps) {
   return (
-    <div className="flex max-h-[60vh] flex-col gap-2 pr-1 relative">
+    <div className="flex max-h-[100%] flex-col gap-2 pr-1 relative">
 
       <div className="w-full flex justify-end">
-        <Pagination showControls color="success" page={page} total={totalPages} onChange={onPageChange} />
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPageChange={onPageChange}
+        />
       </div>
       <div className="overflow-auto h-[500px]">
         {loading ? (
@@ -113,7 +119,7 @@ export default function WorkerLogList({
                       <span>耗时 {item.duration_ms}ms</span>
                     </div>
                   </div>
-                  <Button color="default" size="sm" variant="flat" onPress={() => onToggle(item.id)}>
+                  <Button size="sm" variant="secondary" onPress={() => onToggle(item.id)}>
                     {expanded ? "收起详情" : "展开详情"}
                   </Button>
                 </div>
@@ -122,31 +128,31 @@ export default function WorkerLogList({
                     {item.error ? (
                       <div>
                         <p className="mb-1 text-xs font-medium text-danger">error</p>
-                        <pre className="max-h-40 overflow-auto rounded-md bg-danger-50 p-2 font-mono text-xs whitespace-pre-wrap break-words text-danger-700">{item.error}</pre>
+                        <pre className="max-h-40 overflow-auto rounded-md p-2 font-mono text-xs whitespace-pre-wrap break-words bg-danger/20 text-danger-600">{item.error}</pre>
                       </div>
                     ) : null}
                     {item.stderr ? (
                       <div>
                         <p className="mb-1 text-xs font-medium text-warning">stderr</p>
-                        <pre className="max-h-40 overflow-auto rounded-md bg-warning-50 p-2 font-mono text-xs whitespace-pre-wrap break-words text-warning-700">{item.stderr}</pre>
+                        <pre className="max-h-40 overflow-auto rounded-md p-2 font-mono text-xs whitespace-pre-wrap break-words bg-warning/20 text-warning-700">{item.stderr}</pre>
                       </div>
                     ) : null}
                     {item.result ? (
                       <div>
-                        <p className="mb-1 text-xs font-medium text-primary">result</p>
-                        <pre className="max-h-40 overflow-auto rounded-md bg-primary-50 p-2 font-mono text-xs whitespace-pre-wrap break-words text-primary-700">{formattedResult}</pre>
+                        <p className="mb-1 text-xs font-medium text-accent">result</p>
+                        <pre className="max-h-40 overflow-auto rounded-md p-2 font-mono text-xs whitespace-pre-wrap break-words bg-accent/20 text-accent-600">{formattedResult}</pre>
                       </div>
                     ) : null}
                     {item.stdin ? (
                       <div>
-                        <p className="mb-1 text-xs font-medium text-secondary">stdin</p>
-                        <pre className="max-h-40 overflow-auto rounded-md bg-secondary-50 p-2 font-mono text-xs whitespace-pre-wrap break-words text-secondary-700">{formattedStdin}</pre>
+                        <p className="mb-1 text-xs font-medium text-success">stdin</p>
+                        <pre className="max-h-40 overflow-auto rounded-md p-2 font-mono text-xs whitespace-pre-wrap break-words bg-success/20 text-success-700">{formattedStdin}</pre>
                       </div>
                     ) : null}
                     {item.stdout ? (
                       <div>
-                        <p className="mb-1 text-xs font-medium text-default-700">stdout</p>
-                        <pre className="max-h-40 overflow-auto rounded-md bg-default-100 p-2 font-mono text-xs whitespace-pre-wrap break-words text-default-800">{item.stdout}</pre>
+                        <p className="mb-1 text-xs font-medium text-default-800">stdout</p>
+                        <pre className="max-h-40 overflow-auto rounded-md p-2 font-mono text-xs whitespace-pre-wrap break-words bg-default/40 text-default-700">{item.stdout}</pre>
                       </div>
                     ) : null}
                     {!item.error && !item.stderr && !item.result && !item.stdin && !item.stdout ? (

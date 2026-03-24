@@ -19,7 +19,7 @@ function Footer() {
         title="heroui.com homepage"
       >
         <span className="text-default-600">Powered by</span>
-        <span className="text-primary font-bold ml-1">
+        <span className="text-accent font-bold ml-1">
           Callit
         </span>
       </a>

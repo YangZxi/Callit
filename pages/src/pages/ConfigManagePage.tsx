@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, Card, CardBody, CardHeader, Input, Spinner, Switch, addToast } from "@heroui/react";
+import { Card, Label, Spinner, toast } from "@heroui/react";
+import { Button } from "@heroui/react";
 
 import api from "@/lib/api";
+import { Input, Switch } from "@/components/heroui";
 
 type AppConfigKey =
   | "AI_BASE_URL"
@@ -117,14 +119,14 @@ export default function ConfigManagePage() {
   const save = async () => {
     setSubmitAttempted(true);
     if (intErrors.AI_MAX_CONTEXT_TOKENS || intErrors.AI_TIMEOUT_MS) {
-      addToast({ title: "请先修正数字类型配置", color: "danger", variant: "flat" });
+      toast.danger("请先修正数字类型配置");
       return;
     }
 
     setSaving(true);
     try {
       await api.post("/config", { app_config: values });
-      addToast({ title: "保存成功", color: "success", variant: "flat" });
+      toast.success("保存成功");
       await load();
     } finally {
       setSaving(false);
@@ -134,24 +136,25 @@ export default function ConfigManagePage() {
   const renderFormField = (field: typeof fields[0], invalid: boolean) => {
     if (field.type === "switch") {
       return (
-        <label>
-          {field.label}
+        <div className="flex flex-col gap-1">
+          <Label>{field.label}</Label>
           <Switch
-            isSelected={values[field.key] === "true"}
-            onValueChange={(selected) => {
-              setValues((prev) => ({ ...prev, [field.key]: selected ? "true" : "false" }));
+            value={values[field.key] === "true"}
+            onValueChange={(value) => {
+              setValues((prev) => ({ ...prev, [field.key]: value ? "true" : "false" }));
             }}
-          >
-            {`/ ${sourceHint(field.key)}`}
-          </Switch>
-        </label>
+          />
+        </div>
       );
     } else {
       return <Input
         key={field.key}
+        // description={sourceHint(field.key)}
         errorMessage={invalid ? intErrors[field.key] : undefined}
         isInvalid={invalid}
-        label={`${field.label} / ${sourceHint(field.key)}`}
+        isRequired={field.type === "number"}
+        label={field.label}
+        name={field.key}
         placeholder={field.placeholder}
         type={field.type ?? "text"}
         value={values[field.key]}
@@ -169,25 +172,29 @@ export default function ConfigManagePage() {
           <h1 className="text-2xl font-semibold text-default-900">配置管理</h1>
           <p className="mt-1 text-sm text-default-500">仅支持 AppConfig 白名单项。</p>
         </div>
-        <Button color="primary" isDisabled={loading} isLoading={saving} onPress={save}>
+        <Button variant="primary" isDisabled={loading} isPending={saving} onPress={save}>
           保存
         </Button>
       </div>
 
       <Card className="border border-default-200/70 bg-background/70 shadow-sm">
-        <CardHeader className="flex items-center justify-between">
+        <Card.Header 
+          style={{flexDirection: "unset"}} 
+          className="flex items-center justify-between gap-4"
+        >
           <div>
             <p className="text-base font-semibold">AppConfig</p>
             <p className="mt-1 text-sm text-default-500">优先级：数据库 → 环境变量 → 默认值</p>
           </div>
-          <Button isDisabled={loading} size="sm" variant="light" onPress={load}>
+          <Button isDisabled={loading} size="sm" variant="tertiary" onPress={load}>
             刷新
           </Button>
-        </CardHeader>
-        <CardBody className="space-y-4">
+        </Card.Header>
+        <Card.Content className="space-y-4">
           {loading ? (
-            <div className="flex items-center justify-center py-10">
-              <Spinner label="加载中..." />
+            <div className="flex flex-col gap-2 items-center justify-center py-10">
+              <Spinner />
+              <span className="text-xs text-muted">加载中...</span>
             </div>
           ) : (
             <div className="flex flex-col gap-4">
@@ -199,7 +206,7 @@ export default function ConfigManagePage() {
               })}
             </div>
           )}
-        </CardBody>
+        </Card.Content>
       </Card>
     </div>
   );

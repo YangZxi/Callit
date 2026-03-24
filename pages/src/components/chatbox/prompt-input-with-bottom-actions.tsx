@@ -1,14 +1,9 @@
-import type { Selection } from "@heroui/react";
-
 import React from "react";
 import {
-  Button,
-  Tooltip,
   ButtonGroup,
+  Button,
   Dropdown,
-  DropdownTrigger,
-  DropdownMenu,
-  DropdownItem,
+  Label,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { cn } from "@heroui/react";
@@ -52,90 +47,107 @@ export default function PromptInputWithBottomActions(props: Props) {
   return (
     <div className="flex w-full flex-col gap-2">
       <form
-        className="rounded-medium bg-default-100 hover:bg-default-200/70 flex w-full flex-col items-start transition-colors"
+        className={
+          "rounded-4xl bg-[#ececee] hover:bg-[#e1e1e1] flex w-full flex-col items-start " +
+          "p-1"
+        }
         onSubmit={(event) => {
           event.preventDefault();
           void handleSubmit();
         }}
       >
         <PromptInput
-          classNames={{
-            inputWrapper: "bg-transparent! shadow-none",
-            innerWrapper: "relative",
-            input: "pt-1 pl-2 pb-6 pr-10! text-medium",
-          }}
+          className="pt-1 pr-10 pb-6 pl-2 text-medium"
           endContent={(
             <div className="flex items-end gap-2">
-              <Tooltip showArrow content="发送消息">
-                <Button
-                  isIconOnly
-                  type="submit"
-                  color={!prompt.trim() ? "default" : "primary"}
-                  isDisabled={!prompt.trim() || sending}
-                  isLoading={sending}
-                  radius="lg"
-                  size="sm"
-                  variant="solid"
-                >
-                  <Icon
-                    className={cn(
-                      "[&>path]:stroke-[2px]",
-                      !prompt.trim() ? "text-default-600" : "text-primary-foreground",
-                    )}
-                    icon="solar:arrow-up-linear"
-                    width={20}
-                  />
-                </Button>
-              </Tooltip>
+              {/* <Tooltip showArrow content="发送消息"> */}
+              <Button
+                isIconOnly
+                type="submit"
+                variant={!prompt.trim() ? "tertiary" : "primary"}
+                isDisabled={!prompt.trim() || sending}
+                isPending={sending}
+                className={`rounded-4xl ${!prompt.trim() ? "bg-[#d0d0d3]" : ""}`}
+                size="sm"
+              >
+                <Icon
+                  className={cn(
+                    "[&>path]:stroke-[2px]",
+                    !prompt.trim() ? "text-default-600" : "text-primary-foreground",
+                  )}
+                  icon="solar:arrow-up-linear"
+                  width={20}
+                />
+              </Button>
+              {/* </Tooltip> */}
             </div>
           )}
-          minRows={3}
+          rows={4}
           placeholder="输入你的问题或改造需求..."
-          radius="lg"
           value={prompt}
-          variant="flat"
-          onValueChange={setPrompt}
+          onChange={(event) => setPrompt(event.target.value)}
         />
         <div className="flex w-full items-center justify-between gap-2 overflow-auto px-4 pb-4">
           <div className="flex w-full gap-1 md:gap-3">
-            <ButtonGroup variant="flat">
+            <ButtonGroup isDisabled={sending} size="sm" variant="secondary">
               <Button
-                size="sm"
-                isDisabled={sending}
-                startContent={<Icon className="text-default-500" icon="solar:paperclip-linear" width={18} />}
-                variant="flat"
+                variant="tertiary"
+                className={"bg-[#e7e7e9]"}
                 onPress={() => uploadRef.current?.click()}
               >
-                Attach
+                <Icon className="text-default-500" icon="solar:paperclip-linear" width={18} />
+                上传文件
               </Button>
-              <Dropdown
-                classNames={{
-                  base: "before:bg-default-200",
-                  content: "max-h-[240px] min-w-[220px] py-1 px-1 border border-default-200 bg-linear-to-br from-white to-default-200 dark:from-default-50 dark:to-black",
-                }}
-              >
-                <DropdownTrigger>
-                  <Button size="sm" isIconOnly aria-label="引用文件" isDisabled={sending}>
-                    <ChevronDownIcon />
-                  </Button>
-                </DropdownTrigger>
-                <DropdownMenu
-                  aria-label="Worker 文件引用"
-                  emptyContent="当前 Worker 没有可选文件"
-                  variant="flat"
-                  selectedKeys={selectedKeys}
-                  selectionMode="multiple"
-                  items={files.map((item) => ({ key: item, label: item }))}
-                  onSelectionChange={(selection: Selection) => {
-                    if (selection === "all") {
-                      setSelectedKeys(new Set<string>());
-                      return;
-                    }
-                    setSelectedKeys(new Set(Array.from(selection).map((item) => String(item))));
+              <Dropdown>
+                <Button
+                  isIconOnly
+                  aria-label="选择要引用的 Worker 文件"
+                  className={"bg-[#e7e7e9] text-default"}
+                  isDisabled={files.length === 0}
+                >
+                  <ButtonGroup.Separator />
+                  <ChevronDownIcon />
+                </Button>
+                <Dropdown.Popover placement="bottom end"
+
+                  style={{
+                    width: "100px",
+                    minWidth: "100px",
+                    maxWidth: "160px",
+                    overflowX: "hidden",
                   }}
                 >
-                  {(item) => <DropdownItem key={item.key}>{item.label}</DropdownItem>}
-                </DropdownMenu>
+                  <Dropdown.Menu
+                    aria-label="Worker 文件引用"
+                    selectedKeys={selectedKeys}
+                    selectionMode="multiple"
+                    onSelectionChange={(selection) => {
+                      if (selection === "all") {
+                        setSelectedKeys(new Set(files));
+                        return;
+                      }
+                      setSelectedKeys(new Set(Array.from(selection).map((item) => String(item))));
+                    }}
+                  >
+                    {files.length === 0 ? (
+                      <Dropdown.Item
+                        id="no-files"
+                        isDisabled
+                        textValue="当前 Worker 没有可选文件"
+                      >
+                        <Label>当前 Worker 没有可选文件</Label>
+                      </Dropdown.Item>
+                    ) : files.map((item) => (
+                      <Dropdown.Item
+                        key={item}
+                        id={item}
+                        textValue={item}
+                      >
+                        {item}
+                      </Dropdown.Item>
+                    ))}
+                  </Dropdown.Menu>
+                </Dropdown.Popover>
               </Dropdown>
             </ButtonGroup>
             <input ref={uploadRef} multiple className="hidden" type="file" onChange={handleUpload} />
