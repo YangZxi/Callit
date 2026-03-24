@@ -1,10 +1,12 @@
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from "react";
-import { Button, Chip, Input, Modal, ModalBody, ModalContent, ModalHeader, Select, SelectItem, Switch, addToast } from "@heroui/react";
+import { Chip, SearchField, toast } from "@heroui/react";
+import { Button } from "@heroui/react";
 import { useNavigate } from "react-router-dom";
 
 import api from "@/lib/api";
 import XModal from "@/components/modal";
 import WorkerCronList from "@/components/worker-cron-list";
+import { Input, Select, Switch } from "@/components/heroui";
 
 type WorkerItem = {
   id: string;
@@ -87,23 +89,23 @@ export default function WorkerListPage() {
     const timeout = Number(form.timeoutMS);
 
     if (!form.name.trim()) {
-      addToast({ title: "name 不能为空", color: "warning", variant: "flat", timeout: 2500 });
+      toast.warning("name 不能为空");
       return;
     }
     if ([...form.description].length > 200) {
-      addToast({ title: "description 不能超过 200 字符", color: "warning", variant: "flat", timeout: 2500 });
+      toast.warning("description 不能超过 200 字符");
       return;
     }
     if (!form.route.trim().startsWith("/")) {
-      addToast({ title: "route 必须以 / 开头", color: "warning", variant: "flat", timeout: 2500 });
+      toast.warning("route 必须以 / 开头");
       return;
     }
     if (!isValidWorkerRoute(form.route.trim())) {
-      addToast({ title: "route 使用通配符时只支持结尾 /* 形式", color: "warning", variant: "flat", timeout: 2500 });
+      toast.warning("route 使用通配符时只支持结尾 /* 形式");
       return;
     }
     if (!Number.isFinite(timeout) || timeout <= 0) {
-      addToast({ title: "timeout_ms 必须大于 0", color: "warning", variant: "flat", timeout: 2500 });
+      toast.warning("timeout_ms 必须大于 0");
       return;
     }
     setCreating(true);
@@ -209,34 +211,42 @@ export default function WorkerListPage() {
   };
 
   return (
-    <section className="py-2 md:py-6 pb-4 md:pb-2">
+    <section className="pb-4 md:pb-2">
       <div className="flex items-center justify-between gap-3">
         <div className="flex flex-col gap-1">
           <h1 className="text-3xl font-semibold text-default-900 dark:text-default-700">Worker 列表</h1>
           <p className="text-sm text-default-500">共 {workers.length} 个 Worker</p>
         </div>
         <div className="flex items-center gap-2">
-          <Input
-            className="w-40"
-            placeholder=""
-            size="sm"
-            value={keyword}
-            onKeyDown={onKeywordKeyDown}
-            onValueChange={setKeyword}
-          />
-          <Button color="primary" onPress={openCreateModal}>新增 Worker</Button>
+          <SearchField name="search" 
+            onChange={setKeyword} onKeyDown={onKeywordKeyDown}
+            onClear={() => {
+              setKeyword("");
+              loadWorkers("");
+             }}
+          >
+            <SearchField.Group>
+              <SearchField.SearchIcon />
+              <SearchField.Input 
+                className="w-[120px]" placeholder="Search..."
+                value={keyword}
+              />
+              <SearchField.ClearButton />
+            </SearchField.Group>
+          </SearchField>
+          <Button variant="primary" onPress={openCreateModal}>新增 Worker</Button>
         </div>
       </div>
 
       <div className="mt-4 flex flex-col gap-3">
         {listLoading && <div className="text-sm text-default-500">正在加载 Worker 列表...</div>}
         {empty && (
-		  <div className="rounded-xl border border-default-200 p-5 text-sm text-default-500">暂无 Worker，点击右上角新增。</div>
+          <div className="rounded-xl border border-default-200 p-5 text-sm text-default-500">暂无 Worker，点击右上角新增。</div>
         )}
         {!listLoading && workers.map((item) => (
           <div
             key={item.id}
-            className="w-full rounded-xl border border-default-200 p-4 text-left hover:border-primary transition-colors"
+            className="w-full rounded-xl border border-default-200 p-4 text-left hover:border-accent transition-colors"
             role="button"
             tabIndex={0}
             onClick={() => navigate(`${window.__BASE_PREFIX__}/workers/${item.id}`)}
@@ -246,7 +256,7 @@ export default function WorkerListPage() {
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
                   <p className="text-lg font-medium text-default-900">{item.name}</p>
-                  <Chip color={item.enabled ? "success" : "default"} size="sm" variant="flat">
+                  <Chip color={item.enabled ? "success" : "default"} size="sm" variant="soft">
                     {item.enabled ? "已启用" : "已停用"}
                   </Chip>
                 </div>
@@ -256,48 +266,48 @@ export default function WorkerListPage() {
               </div>
               <div className="flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
                 <Button
-                  color="secondary"
                   size="sm"
-                  variant="flat"
+                  variant="tertiary"
+                  className={"text-xs text-purple-600 dark:text-purple-400"}
                   onPress={() => openCronModal(item)}
                 >
                   Cron
                 </Button>
                 <Button
-                  color="primary"
-                  isLoading={actioningID === item.id}
+                  isPending={actioningID === item.id}
                   size="sm"
-                  variant="flat"
+                  variant="secondary"
+                  className={"text-xs"}
                   onPress={() => openEditModal(item)}
                 >
                   编辑
                 </Button>
                 {item.enabled ? (
                   <Button
-                    color="warning"
-                    isLoading={actioningID === item.id}
+                    isPending={actioningID === item.id}
                     size="sm"
-                    variant="flat"
+                    variant="tertiary"
+                    className="text-xs text-warning"
                     onPress={() => setEnabled(item, false)}
                   >
                     停用
                   </Button>
                 ) : (
                   <Button
-                    color="success"
-                    isLoading={actioningID === item.id}
+                    isPending={actioningID === item.id}
                     size="sm"
-                    variant="flat"
+                    variant="tertiary"
+                    className={"text-xs"}
                     onPress={() => setEnabled(item, true)}
                   >
                     启用
                   </Button>
                 )}
                 <Button
-                  color="danger"
-                  isLoading={actioningID === item.id}
+                  isPending={actioningID === item.id}
                   size="sm"
-                  variant="flat"
+                  variant="danger-soft"
+                  className={"text-xs"}
                   onPress={() => removeWorker(item)}
                 >
                   删除
@@ -315,81 +325,88 @@ export default function WorkerListPage() {
         isOpen={isOpen}
         scrollBehavior="inside"
         submitText={creating ? (modalMode === "create" ? "创建中..." : "保存中...") : (modalMode === "create" ? "创建" : "保存")}
+        classNames={{
+          body: "px-[4px]"
+        }}
         onOpenChange={(open) => setIsOpen(open)}
         onSubmit={() => {
           void submitForm();
         }}
       >
         <form className="flex flex-col gap-3" onSubmit={onCreateSubmit}>
-          <Input isRequired label="Worker 名" value={form.name} onValueChange={(value) => setForm((prev) => ({ ...prev, name: value }))} />
+          <Input
+            isRequired
+            label="Worker 名"
+            name="worker-name"
+            value={form.name}
+            onValueChange={(value) => setForm((prev) => ({ ...prev, name: value }))}
+          />
           <Input
             description={`${[...form.description].length}/200`}
             label="描述"
             maxLength={200}
+            name="worker-description"
             value={form.description}
             onValueChange={(value) => setForm((prev) => ({ ...prev, description: value }))}
           />
-          <Input isRequired label="路由" value={form.route} onValueChange={(value) => setForm((prev) => ({ ...prev, route: value }))} />
+          <Input
+            isRequired
+            label="路由"
+            name="worker-route"
+            value={form.route}
+            onValueChange={(value) => setForm((prev) => ({ ...prev, route: value }))}
+          />
           <Select
+            className="w-full"
             isDisabled={modalMode === "edit"}
             label="Runtime"
-            selectedKeys={[form.runtime]}
-            onSelectionChange={(keys) => {
-              if (modalMode === "edit") return;
-              if (keys === "all") return;
-              const first = Array.from(keys)[0];
-              if (first === "python" || first === "node") {
-                setForm((prev) => ({ ...prev, runtime: first }));
+            options={[
+              { label: "python", value: "python" },
+              { label: "node", value: "node" },
+            ]}
+            value={form.runtime}
+            onValueChange={(value) => {
+              if (value === "python" || value === "node") {
+                setForm((prev) => ({ ...prev, runtime: value }));
               }
             }}
-          >
-            <SelectItem key="python">python</SelectItem>
-            <SelectItem key="node">node</SelectItem>
-          </Select>
+          />
           <Input
             isRequired
             label="超时(ms)"
+            name="worker-timeout"
             type="number"
             value={form.timeoutMS}
             onValueChange={(value) => setForm((prev) => ({ ...prev, timeoutMS: value }))}
           />
-          <Switch 
-            isSelected={form.enabled} 
+          <Switch
+            label="启用 Worker"
+            value={form.enabled}
             onValueChange={(value) => setForm((prev) => ({ ...prev, enabled: value }))}
-          >
-			      启用 Worker
-          </Switch>
+          />
           <button className="hidden" type="submit">创建</button>
         </form>
       </XModal>
 
-      <Modal
-        hideCloseButton={false}
+      <XModal
+        header={cronWorker ? `${cronWorker.name} 的 Cron` : "Cron"}
         isDismissable={false}
         isKeyboardDismissDisabled
         isOpen={cronModalOpen}
         scrollBehavior="inside"
         size="sm"
+        // classNames={{
+        //   body: "mx-[30px]"
+        // }}
         onOpenChange={(open) => {
+          setCronModalOpen(open);
           if (!open) {
-            setCronModalOpen(false);
             setCronWorker(null);
           }
         }}
       >
-        <ModalContent>
-          {() => (
-            <>
-              <ModalHeader className="flex flex-col gap-1 text-default-900 dark:text-default-700">
-                {cronWorker ? `${cronWorker.name} 的 Cron` : "Cron"}
-              </ModalHeader>
-              <ModalBody className="pb-5">
-                {cronWorker ? <WorkerCronList isOpen={cronModalOpen} workerId={cronWorker.id} /> : null}
-              </ModalBody>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
+        {cronWorker ? <WorkerCronList isOpen={cronModalOpen} workerId={cronWorker.id} /> : null}
+      </XModal>
     </section>
   );
 }

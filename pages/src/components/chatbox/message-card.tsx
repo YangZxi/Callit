@@ -1,8 +1,8 @@
 import React from "react";
-import {Avatar, Badge, Button, Link, Tooltip} from "@heroui/react";
-import {useClipboard} from "@heroui/use-clipboard";
+import {Avatar, Badge, Link, Tooltip} from "@heroui/react";
 import {Icon} from "@iconify/react";
 import {cn} from "@heroui/react";
+import { Button } from "@heroui/react";
 
 export type MessageCardProps = React.HTMLAttributes<HTMLDivElement> & {
   avatar?: string;
@@ -42,7 +42,7 @@ const MessageCard = React.forwardRef<HTMLDivElement, MessageCardProps>(
 
     const messageRef = React.useRef<HTMLDivElement>(null);
 
-    const {copied, copy} = useClipboard();
+    const [copied, setCopied] = React.useState(false);
 
     const failedMessageClassName =
       status === "failed" ? "bg-danger-100/50 border border-danger-100 text-foreground" : "";
@@ -77,10 +77,12 @@ const MessageCard = React.forwardRef<HTMLDivElement, MessageCardProps>(
 
       const valueToCopy = stringValue || messageRef.current?.textContent || "";
 
-      copy(valueToCopy);
+      void navigator.clipboard.writeText(valueToCopy);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
 
       onMessageCopy?.(valueToCopy);
-    }, [copy, message, onMessageCopy]);
+    }, [message, onMessageCopy]);
 
     const handleFeedback = React.useCallback(
       (liked: boolean) => {
@@ -127,7 +129,7 @@ const MessageCard = React.forwardRef<HTMLDivElement, MessageCardProps>(
             </div>
             {showFeedback && !hasFailed && (
               <div className="bg-content2 shadow-small absolute top-2 right-2 flex rounded-full">
-                <Button isIconOnly radius="full" size="sm" variant="light" onPress={handleCopy}>
+                <Button isIconOnly className="rounded-full" size="sm" variant="ghost" onPress={handleCopy}>
                   {copied ? (
                     <Icon className="text-default-600 text-lg" icon="gravity-ui:check" />
                   ) : (
@@ -136,9 +138,9 @@ const MessageCard = React.forwardRef<HTMLDivElement, MessageCardProps>(
                 </Button>
                 <Button
                   isIconOnly
-                  radius="full"
+                  className="rounded-full"
                   size="sm"
-                  variant="light"
+                  variant="ghost"
                   onPress={() => handleFeedback(true)}
                 >
                   {feedback === "like" ? (
@@ -149,9 +151,9 @@ const MessageCard = React.forwardRef<HTMLDivElement, MessageCardProps>(
                 </Button>
                 <Button
                   isIconOnly
-                  radius="full"
+                  className="rounded-full"
                   size="sm"
-                  variant="light"
+                  variant="ghost"
                   onPress={() => handleFeedback(false)}
                 >
                   {feedback === "dislike" ? (

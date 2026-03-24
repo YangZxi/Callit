@@ -20,6 +20,10 @@ export default defineConfig({
         target: "http://localhost:3100",
         changeOrigin: true,
       },
+      "/admin0823/api": {
+        target: "https://c.xiaosm.cn",
+        changeOrigin: true,
+      },
     },
   },
 });

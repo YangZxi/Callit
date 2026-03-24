@@ -1,15 +1,13 @@
 import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter, useNavigate } from "react-router-dom";
-import { HeroUIProvider, ToastProvider } from "@heroui/react";
+import { BrowserRouter } from "react-router-dom";
+import { ToastProvider } from "@heroui/react";
 
 import App from "./App.tsx";
 import "@/styles/globals.css";
 
 
-function Provider({ children }: { children: React.ReactNode }) {
-  const navigate = useNavigate();
-
+function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const updateAppHeight = () => {
       // 使用真实可视高度，避免移动端地址栏导致 100vh 误差
@@ -29,7 +27,7 @@ function Provider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  return <HeroUIProvider navigate={navigate}
+  return <div
     className="w-full min-h-screen theme-wrapper"
     style={{
       backgroundImage: `url()`,
@@ -40,17 +38,17 @@ function Provider({ children }: { children: React.ReactNode }) {
       minHeight: "var(--app-height)",
     }}
   >
-    <ToastProvider placement="top-right" />
+    <ToastProvider placement="top" width={260} />
     {children}
-  </HeroUIProvider>;
+  </div>;
 }
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <BrowserRouter>
-      <Provider>
+      <AppShell>
         <App />
-      </Provider>
+      </AppShell>
     </BrowserRouter>
   </React.StrictMode>,
 );

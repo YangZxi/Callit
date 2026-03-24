@@ -1,4 +1,4 @@
-import { Button, ButtonGroup, Dropdown, DropdownItem, DropdownMenu, DropdownTrigger } from "@heroui/react";
+import { ButtonGroup, Dropdown, Button } from "@heroui/react";
 import { ChevronDownIcon, DeleteDocumentIcon, EditDocumentIcon } from "./icons";
 
 type EditorPanelActionProps = {
@@ -9,56 +9,56 @@ type EditorPanelActionProps = {
   onDelete: () => void | Promise<void>;
 };
 
-const iconClasses = "text-xl text-default-500 pointer-events-none shrink-0";
+const iconClasses = "text-default-500 pointer-events-none shrink-0";
 export default function EditorPanelAction(props: EditorPanelActionProps) {
   const {
     disabled = false,
     loading = false,
     onSave,
     onRename,
+    onDelete,
   } = props;
 
   return (
-    <ButtonGroup variant="flat">
-      <Button isDisabled={disabled} isLoading={loading} 
-        color="primary"
-        size="sm"
-        onPress={onSave}
-      >
+    <ButtonGroup variant="tertiary">
+      <Button isDisabled={disabled} isPending={loading} size="sm" variant="primary" onPress={onSave}>
         保存
       </Button>
-      <Dropdown
-        isDisabled={disabled}
-        classNames={{
-          base: "before:bg-default-200", // change arrow background
-          content:
-            "min-w-[140px] py-1 px-1 border border-default-200 bg-linear-to-br from-white to-default-200 dark:from-default-50 dark:to-black",
-        }}
-      >
-        <DropdownTrigger>
-          <Button size="sm" isIconOnly aria-label="更多操作">
-            <ChevronDownIcon />
-          </Button>
-        </DropdownTrigger>
-        <DropdownMenu
-          aria-label="编辑器操作菜单"
-          variant="flat"
+      <Dropdown>
+        <Button 
+          aria-label="更多操作" size="sm" variant="tertiary"
+          isIconOnly isDisabled={disabled} 
         >
-          <DropdownItem 
-            key="rename" color="default" description="重命名"
-            startContent={<EditDocumentIcon className={iconClasses} />}
-            onPress={onRename}
-          >
-            重命名文件
-          </DropdownItem>
-          <DropdownItem 
-            key="delete" className="text-danger" color="danger" description="删除"
-            startContent={<DeleteDocumentIcon className={iconClasses} />}
-            onPress={props.onDelete}
-          >
-            删除文件
-          </DropdownItem>
-        </DropdownMenu>
+          <ButtonGroup.Separator />
+          <ChevronDownIcon />
+        </Button>
+        <Dropdown.Popover
+          placement="bottom end"
+          style={{
+            width: "110px",
+            minWidth: "110px",
+          }}
+        >
+          <Dropdown.Menu aria-label="编辑器操作菜单">
+            <Dropdown.Item
+              id="rename"
+              textValue="重命名"
+              onPress={onRename}
+            >
+              <EditDocumentIcon className={iconClasses} />
+              重命名
+            </Dropdown.Item>
+            <Dropdown.Item
+              id="delete"
+              className="text-danger"
+              textValue="删除"
+              onPress={onDelete}
+            >
+              <DeleteDocumentIcon className={iconClasses} />
+              删除
+            </Dropdown.Item>
+          </Dropdown.Menu>
+        </Dropdown.Popover>
       </Dropdown>
     </ButtonGroup>
   );

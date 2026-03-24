@@ -1,12 +1,12 @@
 import { Dispatch, SetStateAction, useEffect, useMemo, useState } from "react";
-import { addToast, Button, Drawer, DrawerBody, DrawerContent, DrawerHeader, Input, Select, SelectItem, Tab, Tabs, Textarea } from "@heroui/react";
+import { toast, Drawer, Tabs, TextArea, Label } from "@heroui/react";
+import { Button } from "@heroui/react";
+import { Input, Select } from "@/components/heroui";
 
 type TabKey = "headers" | "params" | "body";
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 
 type HttpDrawerProps = {
-  isOpen: boolean;
-  onClose: () => void;
   defaultUrl: string;
   defaultMethod?: HttpMethod;
 };
@@ -67,13 +67,17 @@ function KeyValueRowsEditor({ rows, setRows }: KeyValueRowsEditorProps) {
       {rows.map((row) => (
         <div key={row.id} className="flex gap-2 items-center">
           <Input
-            size="sm"
+            className="flex-1"
+            label=""
+            name={`kv-key-${row.id}`}
             placeholder="Key"
             value={row.key}
             onValueChange={(value) => updateRow(row.id, "key", value)}
           />
           <Input
-            size="sm"
+            className="flex-1"
+            label=""
+            name={`kv-value-${row.id}`}
             placeholder="Value"
             value={row.value}
             onValueChange={(value) => updateRow(row.id, "value", value)}
@@ -81,7 +85,7 @@ function KeyValueRowsEditor({ rows, setRows }: KeyValueRowsEditorProps) {
           <Button
             isIconOnly
             size="sm"
-            variant="flat"
+            variant="secondary"
             isDisabled={rows.length <= 1}
             onPress={() => removeRow(row.id)}
           >
@@ -92,7 +96,7 @@ function KeyValueRowsEditor({ rows, setRows }: KeyValueRowsEditorProps) {
           <Button
             isIconOnly
             size="sm"
-            variant="flat"
+            variant="secondary"
             onPress={() => insertRowAfter(row.id)}
           >
             <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16">
@@ -105,7 +109,7 @@ function KeyValueRowsEditor({ rows, setRows }: KeyValueRowsEditorProps) {
   );
 }
 
-export default function HttpDrawer({ isOpen, onClose, defaultUrl, defaultMethod = "GET" }: HttpDrawerProps) {
+export default function HttpDrawer({ defaultUrl, defaultMethod = "GET" }: HttpDrawerProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("params");
   const [method, setMethod] = useState<HttpMethod>(defaultMethod);
   const [url, setUrl] = useState(defaultUrl);
@@ -127,7 +131,7 @@ export default function HttpDrawer({ isOpen, onClose, defaultUrl, defaultMethod 
 
   const sendRequest = async () => {
     if (!url.trim()) {
-      addToast({ title: "URL 不能为空", color: "danger", variant: "flat", timeout: 1800 });
+      toast.danger("URL 不能为空");
       return;
     }
 
@@ -177,94 +181,103 @@ export default function HttpDrawer({ isOpen, onClose, defaultUrl, defaultMethod 
   };
 
   return (
-    <Drawer
-      isOpen={isOpen}
-      placement="right"
-      size="2xl"
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DrawerContent>
-        <>
-          <DrawerHeader className="flex items-center justify-between gap-2">
-            <span className="text-base font-semibold text-default-900">HTTP 测试</span>
-          </DrawerHeader>
-          <DrawerBody className="">
-            <div className="grid grid-cols-[110px_1fr_auto] items-end gap-2">
-              <Select
-                label="Method"
-                labelPlacement="outside"
-                disallowEmptySelection
-                selectedKeys={new Set([method])}
-                size="sm"
-                onSelectionChange={(keys) => {
-                  if (keys === "all") return;
-                  const first = Array.from(keys)[0];
-                  if (typeof first === "string") {
-                    setMethod(first as HttpMethod);
-                  }
-                }}
-              >
-                {methodList.map((m) => (
-                  <SelectItem key={m}>{m}</SelectItem>
-                ))}
-              </Select>
+    <Drawer>
+      <Button size="sm" variant="tertiary">Testing</Button>
+      <Drawer.Backdrop>
+        <Drawer.Content placement="right">
+          <Drawer.Dialog className="w-[min(96vw,36rem)]">
+            <Drawer.Handle />
+            <Drawer.CloseTrigger />
+            <Drawer.Header>
+              <Drawer.Heading>HTTP 测试</Drawer.Heading>
+            </Drawer.Header>
+            <Drawer.Body className="flex flex-col gap-4">
+              <div className="grid grid-cols-[110px_1fr_auto] items-end gap-2">
+                <Select
+                  className="w-full"
+                  label="Method"
+                  options={methodList.map((m) => ({ label: m, value: m }))}
+                  value={method}
+                  onValueChange={(value) => setMethod(value as HttpMethod)}
+                />
 
-              <Input
-                label="URL"
-                labelPlacement="outside"
-                placeholder="输入请求 URL"
-                size="sm"
-                value={url}
-                onValueChange={setUrl}
-              />
+                <Input
+                  label="URL"
+                  name="http-url"
+                  placeholder="输入请求 URL"
+                  value={url}
+                  onValueChange={setUrl}
+                />
 
-              <Button
-                isIconOnly
-                color="primary"
-                isLoading={loading}
-                size="sm"
-                onPress={sendRequest}
-              >
-                <svg aria-hidden="true" fill="none" height="18" viewBox="0 0 24 24" width="18">
-                  <path d="M5 3l14 9-14 9 3.5-9L5 3z" fill="currentColor" />
-                </svg>
+                <Button
+                  isIconOnly
+                  variant="primary"
+                  isPending={loading}
+                  size="sm"
+                  onPress={sendRequest}
+                >
+                  <svg aria-hidden="true" fill="none" height="18" viewBox="0 0 24 24" width="18">
+                    <path d="M5 3l14 9-14 9 3.5-9L5 3z" fill="currentColor" />
+                  </svg>
+                </Button>
+              </div>
+
+              <div>
+                <Tabs
+                  aria-label="HTTP Tabs"
+                  selectedKey={activeTab}
+                  onSelectionChange={(key) => setActiveTab(String(key) as TabKey)}
+                >
+                  <Tabs.ListContainer>
+                    <Tabs.List aria-label="HTTP Tabs">
+                      <Tabs.Tab id="params">
+                        Params
+                        <Tabs.Indicator />
+                      </Tabs.Tab>
+                      <Tabs.Tab id="body">
+                        Body
+                        <Tabs.Indicator />
+                      </Tabs.Tab>
+                      <Tabs.Tab id="headers">
+                        Headers
+                        <Tabs.Indicator />
+                      </Tabs.Tab>
+                    </Tabs.List>
+                  </Tabs.ListContainer>
+                  <Tabs.Panel className="pt-4" id="params">
+                    <KeyValueRowsEditor rows={paramsRows} setRows={setParamsRows} />
+                  </Tabs.Panel>
+                  <Tabs.Panel className="pt-4" id="body">
+                    <div className="flex flex-col gap-1">
+                      <Label htmlFor="textarea-body">Short feedback</Label>
+                    <TextArea
+                      id="textarea-body"
+                      rows={6}
+                      placeholder='{"name":"callit"}'
+                      value={bodyText}
+                      onChange={(e) => setBodyText(e.target.value)}
+                    />
+                    </div>
+                  </Tabs.Panel>
+                  <Tabs.Panel className="pt-4" id="headers">
+                    <KeyValueRowsEditor rows={headersRows} setRows={setHeadersRows} />
+                  </Tabs.Panel>
+                </Tabs>
+              </div>
+
+              <div className="rounded-lg border border-default-200 bg-content1 p-3">
+                <p className="mb-2 text-sm font-medium text-default-700">Response</p>
+                <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap break-words text-xs text-default-600">{responseText}</pre>
+              </div>
+            </Drawer.Body>
+            <Drawer.Footer className="flex justify-end">
+              <Button slot="close" size="sm" variant="secondary">
+                关闭
               </Button>
-            </div>
-
-            <div>
-              <Tabs
-                aria-label="HTTP Tabs"
-                selectedKey={activeTab}
-                onSelectionChange={(key) => setActiveTab(String(key) as TabKey)}
-              >
-                <Tab key="params" title="Params">
-                  <KeyValueRowsEditor rows={paramsRows} setRows={setParamsRows} />
-                </Tab>
-                <Tab key="body" title="Body">
-                  <Textarea
-                    label="Body"
-                    labelPlacement="outside"
-                    minRows={6}
-                    placeholder='{"name":"callit"}'
-                    value={bodyText}
-                    onValueChange={setBodyText}
-                  />
-                </Tab>
-                <Tab key="headers" title="Headers">
-                  <KeyValueRowsEditor rows={headersRows} setRows={setHeadersRows} />
-                </Tab>
-              </Tabs>
-            </div>
-
-            <div className="rounded-lg border border-default-200 bg-content1 p-3">
-              <p className="mb-2 text-sm font-medium text-default-700">Response</p>
-              <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap break-words text-xs text-default-600">{responseText}</pre>
-            </div>
-          </DrawerBody>
-        </>
-      </DrawerContent>
+            </Drawer.Footer>
+          </Drawer.Dialog>
+        </Drawer.Content>
+      </Drawer.Backdrop>
     </Drawer>
   );
 }

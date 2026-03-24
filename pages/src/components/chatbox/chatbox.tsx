@@ -1,7 +1,7 @@
 import React from "react";
-import { Avatar, Badge, addToast } from "@heroui/react";
+import { Avatar, Badge, toast } from "@heroui/react";
 
-import api, { API_BASE } from "@/lib/api";
+import api, { BASE_API } from "@/lib/api";
 
 import PromptContainerWithConversation from "./prompt-container-with-conversation";
 import { OpenAIIcon } from "../icons";
@@ -37,7 +37,7 @@ async function streamChat(
   payload: { mode: ChatMode; message: string; history_limit: number },
   onEvent: (event: SSEEvent) => void,
 ) {
-  const res = await fetch(`${API_BASE}/workers/${workerId}/chat/stream`, {
+  const res = await fetch(`${BASE_API}/workers/${workerId}/chat/stream`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -158,7 +158,7 @@ export default function Chatbox({ workerId, onFilesChanged }: ChatboxProps) {
     if (!workerId || sending) return;
     await api.post<{ ok: boolean }>(`/workers/${workerId}/chat/session/clear`);
     setMessages([]);
-    addToast({ title: "会话已清空", color: "success", variant: "flat", timeout: 1500 });
+    toast.success("会话已清空");
   }, [workerId, sending]);
 
   const handleUpload = React.useCallback(async (selected: FileList) => {
@@ -217,7 +217,7 @@ export default function Chatbox({ workerId, onFilesChanged }: ChatboxProps) {
           }
           if (event.event === "error") {
             const msg = event.data?.message || "聊天失败";
-            addToast({ title: msg, color: "danger", variant: "flat", timeout: 2200 });
+            toast.danger(msg);
           }
         },
       );
@@ -226,7 +226,7 @@ export default function Chatbox({ workerId, onFilesChanged }: ChatboxProps) {
       await onFilesChanged?.();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "聊天失败";
-      addToast({ title: msg, color: "danger", variant: "flat", timeout: 2200 });
+      toast.danger(msg);
       setMessages((prev) =>
         prev.map((item) =>
           item.id === assistantID && !item.content

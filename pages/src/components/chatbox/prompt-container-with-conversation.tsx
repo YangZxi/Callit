@@ -1,5 +1,6 @@
-import { Button, ScrollShadow, Tab, Tabs } from "@heroui/react";
+import { ScrollShadow, Tab, Tabs } from "@heroui/react";
 import { cn } from "@heroui/react";
+import { Button } from "@heroui/react";
 
 import type { ChatMessage, ChatMode } from "./chatbox";
 import PromptInputWithBottomActions from "./prompt-input-with-bottom-actions";
@@ -52,7 +53,7 @@ export default function PromptContainerWithConversation(props: Props) {
             <Tab key="chat" title="Chat" />
             <Tab key="agent" title="Agent" />
           </Tabs>
-          <Button color="default" size="sm" variant="flat" isDisabled={sending} onPress={onClearSession}>
+          <Button size="sm" variant="secondary" isDisabled={sending} onPress={onClearSession}>
             清空
           </Button>
         </div>

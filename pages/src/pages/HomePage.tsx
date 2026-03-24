@@ -1,7 +1,8 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Button, Input } from "@heroui/react";
+import { Button } from "@heroui/react";
 import { useNavigate } from "react-router-dom";
 import { BASE_PREFIX } from "@/main";
+import { Input } from "@/components/heroui";
 
 import { checkAdminAuthenticated, loginWithAdminToken } from "@/lib/admin-auth";
 
@@ -79,9 +80,9 @@ export default function HomePage() {
           {error && <p className="text-sm text-danger">{error}</p>}
           <Button
             className="w-full"
-            color="primary"
+            variant="primary"
             isDisabled={token.trim() === "" || submitting}
-            isLoading={submitting}
+            isPending={submitting}
             type="submit"
           >
             登录

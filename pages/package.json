@@ -10,13 +10,12 @@
     "preview": "vite preview --host --port 4173"
   },
   "dependencies": {
-    "@heroui/react": "2.8.5",
+    "@heroui/react": "^3.0.1",
+    "@heroui/styles": "^3.0.1",
     "@iconify/react": "6.0.2",
     "@monaco-editor/react": "^4.7.0",
-    "@react-aria/ssr": "3.9.10",
     "@react-aria/visually-hidden": "3.8.28",
     "clsx": "2.1.1",
-    "framer-motion": "11.18.2",
     "monaco-editor": "^0.55.1",
     "path-browserify": "1.0.1",
     "react": "19.2.1",

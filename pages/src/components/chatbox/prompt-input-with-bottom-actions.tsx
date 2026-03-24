@@ -2,7 +2,6 @@ import type { Selection } from "@heroui/react";
 
 import React from "react";
 import {
-  Button,
   Tooltip,
   ButtonGroup,
   Dropdown,
@@ -12,6 +11,7 @@ import {
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { cn } from "@heroui/react";
+import { Button } from "@heroui/react";
 
 import PromptInput from "./prompt-input";
 import { ChevronDownIcon } from "../icons";
@@ -70,12 +70,11 @@ export default function PromptInputWithBottomActions(props: Props) {
                 <Button
                   isIconOnly
                   type="submit"
-                  color={!prompt.trim() ? "default" : "primary"}
+                  variant={!prompt.trim() ? "secondary" : "primary"}
                   isDisabled={!prompt.trim() || sending}
-                  isLoading={sending}
-                  radius="lg"
+                  isPending={sending}
+                  className="rounded-lg"
                   size="sm"
-                  variant="solid"
                 >
                   <Icon
                     className={cn(
@@ -102,10 +101,10 @@ export default function PromptInputWithBottomActions(props: Props) {
               <Button
                 size="sm"
                 isDisabled={sending}
-                startContent={<Icon className="text-default-500" icon="solar:paperclip-linear" width={18} />}
-                variant="flat"
+                variant="secondary"
                 onPress={() => uploadRef.current?.click()}
               >
+                <Icon className="text-default-500" icon="solar:paperclip-linear" width={18} />
                 Attach
               </Button>
               <Dropdown
@@ -115,7 +114,7 @@ export default function PromptInputWithBottomActions(props: Props) {
                 }}
               >
                 <DropdownTrigger>
-                  <Button size="sm" isIconOnly aria-label="引用文件" isDisabled={sending}>
+                  <Button size="sm" isIconOnly variant="secondary" aria-label="引用文件" isDisabled={sending}>
                     <ChevronDownIcon />
                   </Button>
                 </DropdownTrigger>

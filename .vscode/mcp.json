@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "heroui-react": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@heroui/react-mcp@latest"]
+    },
+    "heroui-migration": {
+      "type": "http",
+      "url": "https://migration-mcp.heroui.com"
+    }
+  }
+}

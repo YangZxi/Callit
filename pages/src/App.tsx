@@ -42,7 +42,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function App() {
   const className = "container mx-auto box-border max-w-7xl px-3 md:px-6";
-  const style = { minHeight: "var(--main-height)", paddingTop: "36px" };
+  const style = { minHeight: "var(--main-height)", paddingTop: "102px" };
   const PREFIX = BASE_PREFIX;
 
   return (<>

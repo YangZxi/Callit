@@ -27,6 +27,7 @@ function applyThemeToDom(theme: Theme) {
 
   document.documentElement.classList.remove(ThemeProps.light, ThemeProps.dark);
   document.documentElement.classList.add(theme);
+  document.documentElement.setAttribute("data-theme", theme);
 
   applyThemeWrapperBg(theme);
 }

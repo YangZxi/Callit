@@ -27,7 +27,7 @@ export default function AboutPage() {
   }, []);
 
   return (
-    <section className="flex flex-col items-center justify-center gap-4 py-8 md:py-10">
+    <section className="flex flex-col items-center justify-center gap-4 py-2 md:py-4">
       <div className="inline-block max-w-[720px] text-center justify-center">
         <h1 className={title()}>About</h1>
         <div id="content" className="markdown-body mt-3 text-left"></div>

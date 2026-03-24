@@ -1,13 +1,13 @@
 import type {TextAreaProps} from "@heroui/react";
 
 import React from "react";
-import {Textarea} from "@heroui/react";
+import {TextArea} from "@heroui/react";
 import {cn} from "@heroui/react";
 
 const PromptInput = React.forwardRef<HTMLTextAreaElement, TextAreaProps>(
   ({classNames = {}, ...props}, ref) => {
     return (
-      <Textarea
+      <TextArea
         ref={ref}
         aria-label="Prompt"
         className="min-h-[40px]"
