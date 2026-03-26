@@ -13,7 +13,11 @@ log() {
 
 log "构建前端 (pages)"
 cd "$FRONT_DIR"
-pnpm install
+if [ "${CI:-}" = "true" ]; then
+  pnpm install --frozen-lockfile
+else
+  pnpm install
+fi
 pnpm run build
 
 log "同步前端静态资源到 public"
@@ -32,4 +36,5 @@ GOFLAGS="$GOFLAGS" GOOS=$GOOS GOARCH=$GOARCH go build -o "$DIST_DIR/callit" ./cm
 
 log "完成，二进制输出在 $DIST_DIR/callit"
 
+rm -rf "$DIST_DIR/resources"
 cp -r "$ROOT_DIR/resources" "$DIST_DIR/"

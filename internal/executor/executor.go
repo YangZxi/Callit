@@ -3,19 +3,37 @@ package executor
 import (
 	"bytes"
 	"context"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
+	"callit/internal/config"
 	"callit/internal/model"
 )
 
-const bridgeOutputSeparator = "\n**=====^=====**\n"
+//go:embed worker_entrypoints/*
+var workerEntrypointsFS embed.FS
+
+const logAndOutputSeparator = "\n**=====^=====**\n"
+const (
+	defaultPythonCgroupMemMaxBytes = 64 * 1024 * 1024
+	defaultNodeCgroupMemMaxBytes   = 64 * 1024 * 1024
+	defaultNodeMaxOldSpaceSizeMB   = 64
+	defaultSandboxRlimitFile       = 128
+
+	sandboxWorkspacePath = "/workspace"
+	sandboxRuntimePath   = "/runtime-lib"
+	sandboxTmpPath       = "/tmp"
+	sandboxCgroupV2Path  = "/sys/fs/cgroup"
+)
 
 // ExecuteResult 表示脚本执行结果。
 type ExecuteResult struct {
@@ -32,7 +50,7 @@ type ExecuteResult struct {
 }
 
 // Run 执行函数脚本。
-func Run(parent context.Context, worker model.Worker, workerDir string, input model.WorkerInput) (result ExecuteResult) {
+func Run(parent context.Context, worker model.Worker, workerDir string, runtimeDir string, workerRunningTempDir string, cfg config.Config, input model.WorkerInput) (result ExecuteResult) {
 	started := time.Now()
 	result = ExecuteResult{Headers: map[string]string{}}
 	defer func() {
@@ -42,31 +60,43 @@ func Run(parent context.Context, worker model.Worker, workerDir string, input mo
 	mainFile := mainFilenameByRuntime(worker.Runtime)
 	if mainFile == "" {
 		result.Err = fmt.Errorf("不支持的 runtime: %s", worker.Runtime)
+		slog.Error("不支持的 runtime", "runtime", worker.Runtime)
 		return
 	}
 	if _, err := os.Stat(filepath.Join(workerDir, mainFile)); err != nil {
 		result.Err = fmt.Errorf("主文件不存在: %s", mainFile)
+		slog.Error("Worker 主文件不存在", "worker_dir", workerDir, "main_file", mainFile, "err", err)
 		return
 	}
 
 	payload, err := json.Marshal(input)
 	if err != nil {
 		result.Err = fmt.Errorf("序列化脚本上下文失败: %w", err)
+		slog.Error("序列化脚本上下文失败", "worker_id", worker.ID, "request_id", input.Event.RequestID, "err", err)
 		return
 	}
 
-	bridgeStdout, bridgeStderr, runErr := runWithHandlerBridge(parent, worker, workerDir, payload)
+	bridgeStdout, bridgeStderr, runErr := runWithNsJailBridge(sandboxCommandInput{
+		Parent:               parent,
+		Worker:               worker,
+		WorkerDir:            workerDir,
+		RuntimeDir:           runtimeDir,
+		WorkerRunningTempDir: workerRunningTempDir,
+		EnableCgroupV2:       cfg.EnableCgroupV2,
+		Payload:              payload,
+	})
 	result.Stderr = bridgeStderr
 
 	if errors.Is(parent.Err(), context.DeadlineExceeded) {
 		result.TimedOut = true
 		result.Err = context.DeadlineExceeded
+		slog.Warn("Worker 执行超时", "worker_id", worker.ID, "request_id", input.Event.RequestID)
 		return
 	}
 	if runErr != nil {
-		fmt.Printf("脚本执行失败: %s, %v", bridgeStderr, runErr)
+		// slog.Error("脚本执行失败", "worker_id", worker.ID, "request_id", input.Event.RequestID, "stderr", bridgeStderr, "err", runErr)
 		result.Stdout = bridgeStdout
-		result.Err = fmt.Errorf("脚本执行失败: %w", runErr)
+		result.Err = buildScriptExecuteError(bridgeStderr, runErr)
 		return
 	}
 
@@ -121,27 +151,23 @@ func parseScriptOutput(raw []byte) (model.WorkerOutput, error) {
 	return scriptOut, nil
 }
 
-func splitBridgeOutput(stdout string) (logOutput string, resultOutput string, err error) {
-	sepIdx := strings.LastIndex(stdout, bridgeOutputSeparator)
-	if sepIdx < 0 {
-		return "", "", fmt.Errorf("缺少结果分隔符")
-	}
-
-	logOutput = stdout[:sepIdx]
-	resultOutput = strings.TrimSpace(stdout[sepIdx+len(bridgeOutputSeparator):])
-	if resultOutput == "" {
-		return "", "", fmt.Errorf("分隔符后结果为空")
-	}
-	return logOutput, resultOutput, nil
+type sandboxCommandInput struct {
+	Parent               context.Context
+	Worker               model.Worker
+	WorkerDir            string
+	RuntimeDir           string
+	WorkerRunningTempDir string
+	EnableCgroupV2       bool
+	Payload              []byte
 }
 
-func runWithHandlerBridge(parent context.Context, worker model.Worker, functionDir string, payload []byte) (stdout string, stderr string, err error) {
-	bridgeCmd, err := buildBridgeCommand(parent, worker, functionDir)
+func runWithNsJailBridge(input sandboxCommandInput) (stdout string, stderr string, err error) {
+	bridgeCmd, cleanup, err := buildSandboxCommand(input)
 	if err != nil {
 		return "", "", err
 	}
-	bridgeCmd.Dir = functionDir
-	bridgeCmd.Stdin = bytes.NewReader(payload)
+	defer cleanup()
+	bridgeCmd.Stdin = bytes.NewReader(input.Payload)
 
 	var out, errOut bytes.Buffer
 	bridgeCmd.Stdout = &out
@@ -153,61 +179,420 @@ func runWithHandlerBridge(parent context.Context, worker model.Worker, functionD
 	return out.String(), errOut.String(), nil
 }
 
-func buildBridgeCommand(parent context.Context, worker model.Worker, functionDir string) (*exec.Cmd, error) {
+type sandboxSpec struct {
+	CWD               string
+	CommandPath       string
+	CommandArgs       []string
+	Mounts            []sandboxMount
+	CgroupMemMaxBytes int64
+	EnableCgroupV2    bool
+	RlimitCPUSec      int
+	RlimitNoFile      int
+}
+
+type sandboxMount struct {
+	Source      string
+	Destination string
+	ReadOnly    bool
+	FSType      string
+	IsBind      bool
+}
+
+func buildSandboxSpec(input sandboxCommandInput) (sandboxSpec, error) {
+	workerDir, err := filepath.Abs(input.WorkerDir)
+	if err != nil {
+		return sandboxSpec{}, fmt.Errorf("解析 Worker 目录失败: %w", err)
+	}
+	workerRunningTempDir, err := filepath.Abs(input.WorkerRunningTempDir)
+	if err != nil {
+		return sandboxSpec{}, fmt.Errorf("解析运行时目录失败: %w", err)
+	}
+	runtimeDir, err := filepath.Abs(input.RuntimeDir)
+	if err != nil {
+		return sandboxSpec{}, fmt.Errorf("解析 runtime 依赖目录失败: %w", err)
+	}
+	runtimePath := filepath.Join(runtimeDir, runtimeLibNameByRuntime(input.Worker.Runtime))
+	if info, statErr := os.Stat(runtimePath); statErr != nil || !info.IsDir() {
+		if statErr == nil {
+			statErr = fmt.Errorf("不是目录")
+		}
+		return sandboxSpec{}, fmt.Errorf("runtime 依赖目录不存在: %s: %w", runtimePath, statErr)
+	}
+	commandPath, err := resolveRuntimeExecutable(input.Worker.Runtime)
+	if err != nil {
+		return sandboxSpec{}, err
+	}
+
+	bridgeScript, err := readBridgeScript(input.Worker.Runtime)
+	if err != nil {
+		return sandboxSpec{}, err
+	}
+
+	var commandArgs []string
+	switch input.Worker.Runtime {
+	case "python":
+		commandArgs = []string{"-c", bridgeScript}
+	case "node":
+		commandArgs = []string{
+			"--max-old-space-size=" + strconv.Itoa(defaultNodeMaxOldSpaceSizeMB),
+			"-e",
+			bridgeScript,
+		}
+	default:
+		return sandboxSpec{}, fmt.Errorf("不支持的 runtime: %s", input.Worker.Runtime)
+	}
+
+	spec := sandboxSpec{
+		CWD:               sandboxWorkspacePath,
+		CommandPath:       commandPath,
+		CommandArgs:       commandArgs,
+		CgroupMemMaxBytes: sandboxCgroupMemMaxBytesByRuntime(input.Worker.Runtime),
+		EnableCgroupV2:    input.EnableCgroupV2,
+		RlimitNoFile:      defaultSandboxRlimitFile,
+	}
+
+	spec.Mounts = append(spec.Mounts,
+		sandboxMount{Source: workerDir, Destination: sandboxWorkspacePath, ReadOnly: true, IsBind: true, FSType: "bind"},
+		sandboxMount{Source: runtimePath, Destination: sandboxRuntimePath, ReadOnly: true, IsBind: true, FSType: "bind"},
+		sandboxMount{Source: workerRunningTempDir, Destination: sandboxTmpPath, ReadOnly: false, IsBind: true, FSType: "bind"},
+		sandboxMount{Destination: "/proc", FSType: "proc"},
+	)
+
+	for _, mountPath := range runtimeSupportMountPaths() {
+		if _, statErr := os.Stat(mountPath); statErr != nil {
+			continue
+		}
+		spec.Mounts = append(spec.Mounts, sandboxMount{Source: mountPath, Destination: mountPath, ReadOnly: true, IsBind: true, FSType: "bind"})
+	}
+	slog.Debug("构建沙箱挂载配置", "worker_dir", workerDir, "runtime_path", runtimePath, "temp_dir", input.WorkerRunningTempDir, "mount_count", len(spec.Mounts))
+
+	return spec, nil
+}
+
+func sandboxCgroupMemMaxBytesByRuntime(runtime string) int64 {
+	switch runtime {
+	case "node":
+		return defaultNodeCgroupMemMaxBytes
+	default:
+		return defaultPythonCgroupMemMaxBytes
+	}
+}
+
+func runtimeLibNameByRuntime(runtime string) string {
+	switch runtime {
+	case "python":
+		return "python"
+	case "node":
+		return "node"
+	default:
+		return runtime
+	}
+}
+
+func resolveRuntimeExecutable(runtime string) (string, error) {
+	switch runtime {
+	case "python":
+		return exec.LookPath("python3")
+	case "node":
+		return exec.LookPath("node")
+	default:
+		return "", fmt.Errorf("不支持的 runtime: %s", runtime)
+	}
+}
+
+func runtimeSupportMountPaths() []string {
+	paths := []string{
+		"/lib",
+		"/lib64",
+		"/usr",
+		"/etc/resolv.conf",
+		"/etc/hosts",
+		"/etc/nsswitch.conf",
+		"/etc/gai.conf",
+		"/etc/ssl/certs",
+		"/etc/ca-certificates.conf",
+		"/etc/ssl/openssl.cnf",
+	}
+	return paths
+}
+
+func buildSandboxCommand(input sandboxCommandInput) (*exec.Cmd, func(), error) {
+	cleanup := func() {}
+	timeLimit := input.Worker.TimeoutMS / 1000
+	if input.Worker.TimeoutMS%1000 != 0 {
+		timeLimit++
+	}
+	if timeLimit <= 0 {
+		timeLimit = 1
+	}
+
+	spec, err := buildSandboxSpec(input)
+	if err != nil {
+		return nil, cleanup, err
+	}
+	spec.RlimitCPUSec = timeLimit
+
+	configContent, err := renderSandboxConfig(spec)
+	if err != nil {
+		return nil, cleanup, err
+	}
+
+	configFile, err := os.CreateTemp("", "callit-nsjail-*.cfg")
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("创建 nsjail 配置文件失败: %w", err)
+	}
+	configPath := configFile.Name()
+	cleanup = func() {
+		_ = os.Remove(configPath)
+	}
+	if _, err := configFile.WriteString(configContent); err != nil {
+		_ = configFile.Close()
+		return nil, cleanup, fmt.Errorf("写入 nsjail 配置失败: %w", err)
+	}
+	if err := configFile.Close(); err != nil {
+		return nil, cleanup, fmt.Errorf("关闭 nsjail 配置文件失败: %w", err)
+	}
+
+	nsjailPath := os.Getenv("NSJAIL_BIN")
+	if strings.TrimSpace(nsjailPath) == "" {
+		nsjailPath = "nsjail"
+	}
+	if _, err := exec.LookPath(nsjailPath); err != nil {
+		return nil, cleanup, fmt.Errorf("nsjail 不可用: %w", err)
+	}
+
+	args := buildNsJailArgs(configPath, spec, timeLimit)
+
+	runtimeDirAbs, err := filepath.Abs(input.RuntimeDir)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("解析 runtime 依赖目录失败: %w", err)
+	}
+
+	cmd := exec.CommandContext(input.Parent, nsjailPath, args...)
+	cmd.Dir = input.WorkerDir
+	cmd.Env = buildSandboxEnv(runtimeDirAbs, input.Worker.Runtime, spec.CommandPath)
+	return cmd, cleanup, nil
+}
+
+func buildNsJailArgs(configPath string, spec sandboxSpec, timeLimit int) []string {
+	args := []string{
+		"--config", configPath,
+		"--log_fd", "1",
+		"--keep_env",
+	}
+	if !spec.EnableCgroupV2 {
+		args = append(args, "--disable_clone_newcgroup")
+	}
+	args = append(args,
+		"--rlimit_cpu", strconv.Itoa(spec.RlimitCPUSec),
+		"--rlimit_nofile", strconv.Itoa(spec.RlimitNoFile),
+		"--time_limit", strconv.Itoa(timeLimit),
+		"--",
+		spec.CommandPath,
+	)
+	args = append(args, spec.CommandArgs...)
+	return args
+}
+
+func renderSandboxConfig(spec sandboxSpec) (string, error) {
+	var builder strings.Builder
+	builder.WriteString("name: \"callit-worker\"\n")
+	builder.WriteString("mode: ONCE\n")
+	builder.WriteString("hostname: \"callit\"\n")
+	builder.WriteString("cwd: \"" + spec.CWD + "\"\n")
+	builder.WriteString("max_cpus: 1\n")
+	builder.WriteString("clone_newnet: false\n")
+	builder.WriteString("clone_newuser: true\n")
+	builder.WriteString("clone_newns: true\n")
+	builder.WriteString("clone_newpid: true\n")
+	builder.WriteString("clone_newipc: true\n")
+	builder.WriteString("clone_newuts: true\n")
+	if spec.EnableCgroupV2 {
+		builder.WriteString("detect_cgroupv2: true\n")
+		builder.WriteString("use_cgroupv2: true\n")
+		builder.WriteString("cgroupv2_mount: \"" + sandboxCgroupV2Path + "\"\n")
+		builder.WriteString("cgroup_mem_max: " + strconv.FormatInt(spec.CgroupMemMaxBytes, 10) + "\n")
+	}
+	builder.WriteString("uidmap {\n  inside_id: \"0\"\n  outside_id: \"\"\n  count: 1\n}\n")
+	builder.WriteString("gidmap {\n  inside_id: \"0\"\n  outside_id: \"\"\n  count: 1\n}\n")
+	for _, mount := range spec.Mounts {
+		builder.WriteString("mount {\n")
+		if mount.IsBind {
+			builder.WriteString("  src: \"" + mount.Source + "\"\n")
+			builder.WriteString("  dst: \"" + mount.Destination + "\"\n")
+			builder.WriteString("  is_bind: true\n")
+			if mount.ReadOnly {
+				builder.WriteString("  rw: false\n")
+			} else {
+				builder.WriteString("  rw: true\n")
+			}
+		} else if mount.FSType == "tmpfs" {
+			builder.WriteString("  dst: \"" + mount.Destination + "\"\n")
+			builder.WriteString("  fstype: \"tmpfs\"\n")
+			builder.WriteString("  rw: true\n")
+		} else if mount.FSType == "proc" {
+			builder.WriteString("  dst: \"" + mount.Destination + "\"\n")
+			builder.WriteString("  fstype: \"proc\"\n")
+		}
+		builder.WriteString("}\n")
+	}
+	return builder.String(), nil
+}
+
+func readBridgeScript(runtime string) (string, error) {
 	filename := ""
-	switch worker.Runtime {
+	switch runtime {
 	case "python":
 		filename = "python.py"
 	case "node":
 		filename = "node.js"
 	default:
-		return nil, fmt.Errorf("不支持的 runtime: %s", worker.Runtime)
+		return "", fmt.Errorf("不支持的 runtime: %s", runtime)
 	}
-	path := filepath.Join("resources/worker_entrypoints", filename)
-	content, err := os.ReadFile(path)
+	content, err := workerEntrypointsFS.ReadFile(filepath.ToSlash(filepath.Join("worker_entrypoints", filename)))
 	if err != nil {
-		return nil, fmt.Errorf("读取入口脚本失败: %w", err)
+		return "", fmt.Errorf("读取入口脚本失败: %w", err)
 	}
-	code := string(content)
-
-	switch worker.Runtime {
-	case "python":
-		cmd := exec.CommandContext(parent, "python3", "-c", code)
-		cmd.Env = buildRuntimeEnv(functionDir, worker.Runtime)
-		return cmd, nil
-	case "node":
-		cmd := exec.CommandContext(parent, "node", "-e", code)
-		cmd.Env = buildRuntimeEnv(functionDir, worker.Runtime)
-		return cmd, nil
-	default:
-		return nil, fmt.Errorf("不支持的 runtime: %s", worker.Runtime)
-	}
+	return string(content), nil
 }
 
-func buildRuntimeEnv(functionDir string, runtime string) []string {
-	env := os.Environ()
-
-	workerAbs, err := filepath.Abs(functionDir)
-	if err != nil {
-		return env
+func buildScriptExecuteError(stderr string, runErr error) error {
+	if strings.Contains(stderr, "[Errno 30] Read-only file system") {
+		slog.Warn("检测到只读目录写入", "stderr", stderr)
+		return errors.New("不允许在只读文件中执行写入操作")
 	}
-	workersDir := filepath.Dir(workerAbs)
-	dataDir := filepath.Dir(workersDir)
-	libDir := filepath.Join(dataDir, ".lib")
+	return fmt.Errorf("脚本执行失败: %w", runErr)
+}
+
+func buildSandboxEnv(runtimeDir string, runtime string, executablePath string) []string {
+	envList := []string{
+		"HOME=/tmp",
+		"TMPDIR=/tmp",
+		"LANG=C.UTF-8",
+	}
+
+	pathEntries := []string{}
+	pathEntries = append(pathEntries, filepath.Dir(executablePath))
+	pathEntries = append(pathEntries, "/usr/local/bin", "/usr/bin", "/bin")
+	envList = append(envList, "PATH="+buildPathEntries(pathEntries))
 
 	switch runtime {
 	case "node":
-		nodePath := filepath.Join(libDir, "node", "node_modules")
-		env = appendOrMergeEnvPath(env, "NODE_PATH", nodePath)
+		envList = appendRuntimeEnvPaths(envList, "NODE_PATH", nodeRuntimeModulePaths(runtimeDir, executablePath))
 	case "python":
-		sitePackages := detectPythonSitePackages(filepath.Join(libDir, "python"))
-		if sitePackages != "" {
-			env = appendOrMergeEnvPath(env, "PYTHONPATH", sitePackages)
-		}
+		envList = appendRuntimeEnvPaths(envList, "PYTHONPATH", pythonRuntimeModulePaths(runtimeDir))
+	}
+	return envList
+}
+
+func appendRuntimeEnvPaths(env []string, key string, paths []string) []string {
+	for _, item := range paths {
+		env = appendOrMergeEnvPath(env, key, item)
 	}
 	return env
 }
 
+func nodeRuntimeModulePaths(runtimeDir string, executablePath string) []string {
+	runtimeRoot := filepath.Join(runtimeDir, "node")
+	paths := []string{
+		mapRuntimePathToSandbox(filepath.Join(runtimeRoot, "node_modules"), runtimeRoot),
+	}
+	return append(paths, nodeGlobalModulePaths(executablePath)...)
+}
+
+func pythonRuntimeModulePaths(runtimeDir string) []string {
+	runtimeRoot := filepath.Join(runtimeDir, "python")
+	sitePackages := detectPythonSitePackages(runtimeRoot)
+	if sitePackages == "" {
+		return nil
+	}
+	return []string{
+		mapRuntimePathToSandbox(sitePackages, runtimeRoot),
+	}
+}
+
+func mapRuntimePathToSandbox(hostPath string, runtimeRoot string) string {
+	hostPath = filepath.Clean(strings.TrimSpace(hostPath))
+	runtimeRoot = filepath.Clean(strings.TrimSpace(runtimeRoot))
+	if hostPath == "" || runtimeRoot == "" {
+		return hostPath
+	}
+	if hostPath == runtimeRoot {
+		return sandboxRuntimePath
+	}
+	rel, err := filepath.Rel(runtimeRoot, hostPath)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return hostPath
+	}
+	return filepath.Join(sandboxRuntimePath, rel)
+}
+
+func nodeGlobalModulePaths(executablePath string) []string {
+	if strings.TrimSpace(executablePath) == "" {
+		return nil
+	}
+
+	nodeBinDir := filepath.Dir(filepath.Clean(executablePath))
+	nodeRootDir := filepath.Dir(nodeBinDir)
+	return []string{
+		filepath.Join(nodeRootDir, "lib", "node_modules"),
+		"/usr/local/lib/node_modules",
+		"/usr/lib/node_modules",
+	}
+}
+
+// buildPathEntries 将路径切片去重后按系统分隔符拼成 PATH 值。
+func buildPathEntries(entries []string) string {
+	seen := make(map[string]struct{}, len(entries))
+	ordered := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if _, ok := seen[entry]; ok {
+			continue
+		}
+		seen[entry] = struct{}{}
+		ordered = append(ordered, entry)
+	}
+	return strings.Join(ordered, string(os.PathListSeparator))
+}
+
+func splitBridgeOutput(stdout string) (logOutput string, resultOutput string, err error) {
+	startIdx := strings.Index(stdout, logAndOutputSeparator)
+	if startIdx < 0 {
+		return "", "", fmt.Errorf("缺少结果分隔符")
+	}
+	resultStart := startIdx + len(logAndOutputSeparator)
+	endRelIdx := strings.Index(stdout[resultStart:], logAndOutputSeparator)
+	if endRelIdx < 0 {
+		return "", "", fmt.Errorf("缺少结果结束分隔符")
+	}
+	endIdx := resultStart + endRelIdx
+
+	logPrefix := stdout[:startIdx]
+	logSuffix := stdout[endIdx+len(logAndOutputSeparator):]
+	switch {
+	case strings.TrimSpace(logPrefix) == "":
+		logOutput = logSuffix
+	case strings.TrimSpace(logSuffix) == "":
+		logOutput = logPrefix
+	default:
+		if strings.HasSuffix(logPrefix, "\n") || strings.HasPrefix(logSuffix, "\n") {
+			logOutput = logPrefix + logSuffix
+		} else {
+			logOutput = logPrefix + "\n" + logSuffix
+		}
+	}
+	resultOutput = strings.TrimSpace(stdout[resultStart:endIdx])
+	if resultOutput == "" {
+		return "", "", fmt.Errorf("分隔符后结果为空")
+	}
+	return logOutput, resultOutput, nil
+}
+
+// 用于在 Python 虚拟环境目录下定位真实的 site-packages 路径，供构建 PYTHONPATH 使用。
 func detectPythonSitePackages(pythonEnvDir string) string {
 	libDir := filepath.Join(pythonEnvDir, "lib")
 	entries, err := os.ReadDir(libDir)

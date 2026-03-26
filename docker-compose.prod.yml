@@ -8,9 +8,13 @@ services:
       - AI_BASE_URL=https://openrouter.ai/api/v1
       - AI_API_KEY=
       - AI_MODEL=minimax/minimax-m2.7
+      # - ENABLE_CGROUP_V2=true
       # - TZ=Asia/Shanghai
     ports:
       - "3100:3100"
     volumes:
       - ./data:/app/data
+      # 如需启用 nsjail 的 cgroup 内存限制，可放开下面两项
+      # - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    # privileged: true
     restart: unless-stopped

@@ -50,6 +50,7 @@ services:
       - "3100:3100"
     volumes:
       - ./data:/app/data
+    privileged: true
     restart: unless-stopped
 ```
 
@@ -138,11 +139,8 @@ function handler(ctx) {
 
 如果你需要本地修改源码、调试前端或开发后端，可按下面方式启动。
 
-### 1. 设置管理令牌
-
-```bash
-export ADMIN_TOKEN=your-token
-```
+### 1. 安装 Docker
+编辑 `docker-compose.dev.yml`，并配置相应的环境变量
 
 ### 2. 启动前端
 
@@ -155,8 +153,9 @@ pnpm run dev
 ### 3. 启动后端
 
 ```bash
-go run ./cmd
+docker compose -f docker-compose.dev.yml up --build
 ```
+后端数据默认保存在 `data/` 目录下
 
 默认前端端口为 `3180`。
 默认后端端口为 `3100`。
@@ -165,7 +164,7 @@ go run ./cmd
 
 - `data/app.db`：SQLite 数据库
 - `data/workers/<worker_id>/`：Worker 文件目录
-- `data/temps/<request_id>/`：上传文件临时目录，请求结束后自动清理
+- `data/tmp/<request_id>/`：上传文件临时目录，请求结束后自动清理，根目录可由 `WORKER_RUNNING_TEMP_DIR` 配置
 - `data/.lib/<runtime>/`：运行时全局依赖目录
 - `public/`：Admin 前端构建产物目录
 

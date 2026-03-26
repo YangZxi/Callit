@@ -2,7 +2,8 @@ import json
 import importlib.util
 import sys
 
-SEPARATOR = "\n**=====^=====**\n"
+RES_SEPARATOR = "\n**=====^=====**\n"
+LOG_SEPARATOR = "\n===============\n"
 
 raw = sys.stdin.read()
 ctx = json.loads(raw) if raw else {}
@@ -15,7 +16,12 @@ handler = getattr(mod, "handler", None)
 if not callable(handler):
 	raise RuntimeError("main.py 必须定义 handler(ctx)")
 
+sys.stdout.write(LOG_SEPARATOR)
+
 out = handler(ctx)
-sys.stdout.write(SEPARATOR)
+sys.stdout.write(RES_SEPARATOR)
 sys.stdout.write(json.dumps(out, ensure_ascii=False))
+sys.stdout.write(RES_SEPARATOR)
+
+sys.stdout.write(LOG_SEPARATOR.strip() + "\n\n")
 sys.stdout.flush()

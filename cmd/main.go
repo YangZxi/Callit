@@ -4,12 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -27,33 +26,40 @@ import (
 
 func main() {
 	cfg := config.Load()
-	if err := ensureRuntimeDirs(cfg.DataDir); err != nil {
-		log.Fatalf("初始化运行目录失败: %v", err)
+	setupLogger(cfg.LogLevel)
+	if err := ensureRuntimeDirs(cfg); err != nil {
+		slog.Error("初始化运行目录失败", "err", err)
+		os.Exit(1)
 	}
+	slog.Info("项目启动配置：", "config", cfg)
 
 	store, err := db.Open(cfg.DatabasePath)
 	if err != nil {
-		log.Fatalf("初始化数据库失败: %v", err)
+		slog.Error("初始化数据库失败", "err", err)
+		os.Exit(1)
 	}
 	defer store.Close()
 	if err := cfg.Sync(context.Background(), store.AppConfig); err != nil {
-		log.Fatalf("加载应用配置失败: %v", err)
+		slog.Error("加载应用配置失败", "err", err)
+		os.Exit(1)
 	}
 
 	reg := router.New()
 	funcs, err := store.Worker.ListEnabled(context.Background())
 	if err != nil {
-		log.Fatalf("加载已启用的 Worker 失败: %v", err)
+		slog.Error("加载已启用的 Worker 失败", "err", err)
+		os.Exit(1)
 	}
 	reg.Reload(funcs)
 
-	invoker := executor.NewService(store, cfg.DataDir)
+	invoker := executor.NewService(store, cfg)
 	cronManager := cron.NewManager(store, invoker, time.Local)
 	if err := cronManager.Start(context.Background()); err != nil {
-		log.Fatalf("启动 cron 调度器失败: %v", err)
+		slog.Error("启动 cron 调度器失败", "err", err)
+		os.Exit(1)
 	}
 
-	routerEngine := router.NewEngine(store, reg, cfg.DataDir, invoker)
+	routerEngine := router.NewEngine(store, reg, cfg.WorkersDir, invoker)
 	adminEngine := admin.NewEngine(store, reg, cronManager, &cfg)
 	var mcpHandler http.Handler
 	if cfg.AppConfig.MCP_Enable {
@@ -67,11 +73,11 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	localIP := resolveLocalIPv4()
-	log.Printf("服务启动: http://%s:%d", localIP, cfg.ServerPort)
-	log.Printf("Admin 服务入口: http://%s:%d%s", localIP, cfg.ServerPort, cfg.AdminPrefix)
-	log.Printf("AdminToken: %s", cfg.AdminToken)
+	slog.Info("服务启动", "url", fmt.Sprintf("http://%s:%d", localIP, cfg.ServerPort))
+	slog.Info("Admin 服务入口", "url", fmt.Sprintf("http://%s:%d%s", localIP, cfg.ServerPort, cfg.AdminPrefix))
+	slog.Info("AdminToken", "token", cfg.AdminToken)
 	if cfg.AppConfig.MCP_Enable {
-		log.Printf("MCP 服务入口: http://%s:%d/mcp", localIP, cfg.ServerPort)
+		slog.Info("MCP 服务入口", "url", fmt.Sprintf("http://%s:%d/mcp", localIP, cfg.ServerPort))
 	}
 
 	group, gctx := errgroup.WithContext(context.Background())
@@ -90,7 +96,7 @@ func main() {
 		case <-gctx.Done():
 			return nil
 		case sig := <-sigCh:
-			log.Printf("收到退出信号: %s", sig.String())
+			slog.Warn("收到退出信号", "signal", sig.String())
 		}
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -102,17 +108,37 @@ func main() {
 	})
 
 	if err := group.Wait(); err != nil {
-		log.Fatalf("服务退出异常: %v", err)
+		slog.Error("服务退出异常", "err", err)
+		os.Exit(1)
 	}
-	log.Println("服务已退出")
+	slog.Info("服务已退出")
 }
 
-func ensureRuntimeDirs(dataDir string) error {
+func setupLogger(levelRaw string) {
+	level := new(slog.LevelVar)
+	level.Set(parseLogLevel(levelRaw))
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
+}
+
+func parseLogLevel(levelRaw string) slog.Level {
+	switch strings.ToLower(strings.TrimSpace(levelRaw)) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
+func ensureRuntimeDirs(cfg config.Config) error {
 	dirs := []string{
-		dataDir,
-		filepath.Join(dataDir, ".lib"),
-		filepath.Join(dataDir, "workers"),
-		filepath.Join(dataDir, "temps"),
+		cfg.DataDir,
+		cfg.WorkersDir,
+		cfg.WorkerRunningTempDir,
+		cfg.RuntimeLibDir,
 	}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {

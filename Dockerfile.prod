@@ -1,0 +1,99 @@
+# syntax=docker/dockerfile:1.7
+
+FROM golang:1.25-bookworm AS builder
+WORKDIR /app
+
+ENV CI=true
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       autoconf \
+       bison \
+       flex \
+       gcc \
+       g++ \
+       git \
+       libnl-route-3-dev \
+       libprotobuf-dev \
+       libtool \
+       make \
+       nodejs \
+       npm \
+       pkg-config \
+       protobuf-compiler \
+    && npm install -g pnpm@10 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . ./
+
+RUN bash ./build.sh \
+    && mkdir -p /app/dist \
+    && git clone https://github.com/google/nsjail.git /tmp/nsjail-src \
+    && cd /tmp/nsjail-src \
+    && make clean \
+    && make \
+    && install -m 0755 /tmp/nsjail-src/nsjail /app/dist/nsjail \
+    && cd /app \
+    && rm -rf /tmp/nsjail-src
+
+# 使用手动安装 nodejs 的方式，解决沙箱无法正常执行 node 命令的问题
+FROM debian:bookworm-slim AS node-runtime
+
+ARG NODE_VERSION=22.19.0
+ARG NODE_ARCH=linux-x64
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates \
+       curl \
+       xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /usr/local/nodejs \
+    && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${NODE_ARCH}.tar.xz" -o /tmp/node.tar.xz \
+    && tar -xJf /tmp/node.tar.xz -C /usr/local/nodejs --strip-components=1 \
+    && rm -f /tmp/node.tar.xz
+
+FROM debian:bookworm-slim AS runtime
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates \
+       libc6 \
+       libstdc++6 \
+       libnl-route-3-200 \
+       libnl-3-200 \
+       libprotobuf32 \
+       python3 \
+       python3-pip \
+       python3-venv \
+       sqlite3 \
+    && groupadd -g 10001 callit \
+    && useradd -u 10001 -g callit -d /app -s /usr/sbin/nologin callit \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=node-runtime /usr/local/nodejs /usr/local/nodejs
+COPY --from=builder --chown=callit:callit /app/dist/callit /app/callit
+COPY --from=builder --chown=callit:callit /app/dist/nsjail /usr/local/bin/nsjail
+COPY --from=builder --chown=callit:callit /app/dist/public /app/public
+COPY --from=builder --chown=callit:callit /app/dist/resources /app/resources
+
+RUN ln -sf /usr/local/nodejs/bin/node /usr/local/bin/node \
+    && ln -sf /usr/local/nodejs/bin/npm /usr/local/bin/npm \
+    && ln -sf /usr/local/nodejs/bin/npx /usr/local/bin/npx \
+    && npm install -g pnpm@10 \
+    && ln -sf /usr/local/nodejs/bin/pnpm /usr/local/bin/pnpm \
+    && ln -sf /usr/local/nodejs/bin/pnpx /usr/local/bin/pnpx
+
+RUN mkdir -p /app/data/workers /app/data/tmp \
+    && chown -R callit:callit /app/data
+
+ENV GIN_MODE=release
+ENV DATA_DIR=/app/data
+ENV ADMIN_PORT=3100
+ENV PATH=/usr/local/nodejs/bin:/usr/local/bin:/usr/bin:/bin
+
+EXPOSE 3100
+
+CMD ["/app/callit"]

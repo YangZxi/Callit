@@ -19,7 +19,9 @@
 4. 执行 Worker 主文件。
 5. 读取脚本的 `stdout` / `stderr`。
 6. 将 `stdout` 中的结构化结果解析为 HTTP 响应。
-7. 当接收到文件上传时，系统会把文件暂存到服务器临时目录，并把文件信息（如路径、大小、类型）传入 `request.json[filename]` 中。
+7. 当接收到文件上传时，系统会把文件暂存到服务器的运行时数据目录，并把文件信息（如路径、大小、类型）传入 `request.json[filename]` 中。沙箱内对应的可见路径为 `/tmp/upload`。
+
+Worker 中的脚本仅允许读写 `/tmp` 文件夹，其他文件皆为**只读**。
 
 ## 入口文件要求
 
@@ -32,6 +34,11 @@ Worker 目录中必须包含主代码文件，文件名由 runtime 决定：
 
 在 `main.xx` 入口文件中必须提供 `handler` 方法，用于接收执行上下文并返回响应结果。
 
+如果脚本通过 `result.file` 返回文件路径：
+
+- 相对路径会按 Worker 根目录解析
+- 以 `/tmp/` 开头的路径会按运行时数据目录解析
+
 ### Python
 
 `main.py` 必须定义：
@@ -43,33 +50,27 @@ def handler(ctx):
 
 如果未定义可调用的 `handler(ctx)`，运行时会报错：
 
-```text
-main.py 必须定义 handler(ctx)
-```
-
 ### Node
 
-`main.js` 必须能以任一形式暴露 `handler`：
+`main.js` 必须通过 CommonJS 导出 `handler`：
 
 ```javascript
 function handler(ctx) {
   ...
 }
+
+module.exports = handler;
 ```
 
 或：
 
 ```javascript
-module.exports = function (ctx) {
+exports.handler = function (ctx) {
   ...
 }
 ```
 
 如果没有导出可调用的 `handler`，运行时会报错：
-
-```text
-main.js 必须定义 handler(ctx) 或导出 handler
-```
 
 ## 模板示例
 
@@ -108,6 +109,8 @@ function handler(ctx) {
     }
   };
 }
+
+module.exports = handler
 ```
 
 ## context 结构
@@ -402,7 +405,7 @@ def handler(ctx):
             "filename": first.get("filename"),
             "content_type": first.get("content_type"),
             "size": file_size,
-            "temp_path": file_path,
+            "tmp_path": file_path,
             "form_fields": form
         }
     }
@@ -422,7 +425,7 @@ def handler(ctx):
           "filename": "hello.txt",
           "content_type": "text/plain",
           "size": 12,
-          "path": "data/temps/<request_id>/hello.txt"
+          "path": "/tmp/upload/hello.txt"
         }
       ]
     }
