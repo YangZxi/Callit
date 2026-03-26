@@ -4,6 +4,11 @@ on:
   push:
     branches: ["**"]
   workflow_dispatch:
+    inputs:
+      version_name:
+        description: "手动发布的版本标签，例如 v1.0.0"
+        required: false
+        type: string
 
 jobs:
   build-and-push:
@@ -33,10 +38,30 @@ jobs:
       #     ./build.sh
 
       - name: Prepare image tags
+        env:
+          IMAGE_REPO: ${{ vars.IMAGE_REPO }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          VERSION_NAME: ${{ github.event.inputs.version_name }}
         run: |
-          TAG_BRANCH=${GITHUB_REF_NAME//\//-}
-          SHORT_SHA=${GITHUB_SHA::6}
-          echo "IMAGE_TAG=${TAG_BRANCH}-${SHORT_SHA}" >> "$GITHUB_ENV"
+          SHORT_SHA=${GITHUB_SHA::7}
+          VERSION_NAME="$(echo "${VERSION_NAME}" | xargs)"
+
+          TAGS="${IMAGE_REPO}:${SHORT_SHA}"
+
+          if [ "${EVENT_NAME}" = "push" ] && [ "${REF_NAME}" = "main" ]; then
+            TAGS="${TAGS}"$'\n'"${IMAGE_REPO}:latest"
+          elif [ "${EVENT_NAME}" = "push" ]; then
+            TAGS="${TAGS}"$'\n'"${IMAGE_REPO}:test"
+          fi
+
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] && [ -n "${VERSION_NAME}" ]; then
+            TAGS="${TAGS}"$'\n'"${IMAGE_REPO}:${VERSION_NAME}"
+          fi
+
+          echo "IMAGE_TAGS<<EOF" >> "$GITHUB_ENV"
+          printf '%s\n' "${TAGS}" >> "$GITHUB_ENV"
+          echo "EOF" >> "$GITHUB_ENV"
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -46,8 +71,19 @@ jobs:
 
       - name: Build and push Docker image
         env:
-          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          IMAGE_TAGS: ${{ env.IMAGE_TAGS }}
         run: |
-          docker build -t "${{ vars.IMAGE_REPO}}:$IMAGE_TAG" -t "${{ vars.IMAGE_REPO}}:latest" -f "./Dockerfile" .
-          docker push "${{ vars.IMAGE_REPO}}:$IMAGE_TAG"
-          docker push "${{ vars.IMAGE_REPO}}:latest"
+          TAG_ARGS=()
+          while IFS= read -r tag; do
+            if [ -n "${tag}" ]; then
+              TAG_ARGS+=(-t "${tag}")
+            fi
+          done <<< "${IMAGE_TAGS}"
+
+          docker build "${TAG_ARGS[@]}" -f "./Dockerfile.prod" .
+
+          while IFS= read -r tag; do
+            if [ -n "${tag}" ]; then
+              docker push "${tag}"
+            fi
+          done <<< "${IMAGE_TAGS}"

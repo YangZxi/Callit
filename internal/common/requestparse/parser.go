@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"mime/multipart"
 	"net/url"
@@ -156,11 +157,13 @@ func ParseURLEncoded(raw []byte) (map[string]any, error) {
 	return b.data, nil
 }
 
-// ParseMultipart 解析 multipart/form-data，并把文件写入 uploadDir。
+// ParseMultipart 解析 multipart/form-data，并把文件写入 <DATA_DIR>/tmp/<request_id>/upload 对应的运行时数据目录。
 func ParseMultipart(raw []byte, contentType string, uploadDir string) (map[string]any, error) {
 	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
+		slog.Error("创建上传目录失败", "upload_dir", uploadDir, "err", err)
 		return nil, fmt.Errorf("创建上传目录失败: %w", err)
 	}
+	slog.Debug("准备解析 multipart 上传", "upload_dir", uploadDir)
 
 	_, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
@@ -206,10 +209,12 @@ func ParseMultipart(raw []byte, contentType string, uploadDir string) (map[strin
 		safeName := filepath.Base(fileName)
 		if safeName == "." || safeName == "/" || safeName == "" || strings.Contains(fileName, "/") || strings.Contains(fileName, "\\") {
 			part.Close()
+			slog.Warn("检测到非法上传文件名", "filename", fileName)
 			return nil, fmt.Errorf("非法文件名: %s", fileName)
 		}
 		if _, ok := usedFileNames[safeName]; ok {
 			part.Close()
+			slog.Warn("检测到重复上传文件名", "filename", safeName)
 			return nil, fmt.Errorf("同一请求内文件名重复: %s", safeName)
 		}
 		usedFileNames[safeName] = struct{}{}
@@ -218,23 +223,27 @@ func ParseMultipart(raw []byte, contentType string, uploadDir string) (map[strin
 		out, createErr := os.Create(targetPath)
 		if createErr != nil {
 			part.Close()
+			slog.Error("创建上传文件失败", "target_path", targetPath, "err", createErr)
 			return nil, fmt.Errorf("创建上传文件失败: %w", createErr)
 		}
 		size, copyErr := io.Copy(out, part)
 		closeErr := out.Close()
 		part.Close()
 		if copyErr != nil {
+			slog.Error("写入上传文件失败", "target_path", targetPath, "err", copyErr)
 			return nil, fmt.Errorf("写入上传文件失败: %w", copyErr)
 		}
 		if closeErr != nil {
+			slog.Error("关闭上传文件失败", "target_path", targetPath, "err", closeErr)
 			return nil, fmt.Errorf("关闭上传文件失败: %w", closeErr)
 		}
+		slog.Debug("保存上传文件成功", "target_path", targetPath, "filename", safeName, "size", size)
 
 		meta := FileMeta{
 			Filename:    safeName,
 			ContentType: part.Header.Get("Content-Type"),
 			Size:        size,
-			Path:        filepath.ToSlash(targetPath),
+			Path:        filepath.ToSlash(filepath.Join("/tmp", "upload", safeName)),
 		}
 		if meta.ContentType == "" {
 			meta.ContentType = "application/octet-stream"

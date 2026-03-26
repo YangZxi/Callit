@@ -5,12 +5,11 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"log"
+	"log/slog"
 	"mime"
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -26,15 +25,15 @@ import (
 
 // Server 表示 Router 服务。
 type Server struct {
-	store   *db.Store
-	reg     *Registry
-	dataDir string
-	invoker *executor.Service
+	store     *db.Store
+	reg       *Registry
+	workerDir string
+	invoker   *executor.Service
 }
 
 // NewEngine 创建 Router Gin 引擎。
-func NewEngine(store *db.Store, reg *Registry, dataDir string, invoker *executor.Service) *gin.Engine {
-	s := &Server{store: store, reg: reg, dataDir: dataDir, invoker: invoker}
+func NewEngine(store *db.Store, reg *Registry, workerDir string, invoker *executor.Service) *gin.Engine {
+	s := &Server{store: store, reg: reg, workerDir: workerDir, invoker: invoker}
 	e := gin.New()
 	e.Use(gin.Recovery(), common.RequestIDMiddleware())
 	e.GET("/", func(c *gin.Context) {
@@ -63,9 +62,15 @@ func (s *Server) handleInvoke(c *gin.Context) {
 		return
 	}
 
-	parsed, cleanup, err := s.parseRequetBodyToJson(requestID, contentType, rawBody)
+	workerRunningTempDir, cleanup, err := executor.CreateWorkerRunningTempDir(s.invoker.WorkerRunningTempDir(), requestID)
 	defer cleanup()
 	if err != nil {
+		common.ErrorResponse(c, http.StatusInternalServerError, "创建运行时目录失败")
+		return
+	}
+	parsed, err := s.parseRequetBodyToJson(contentType, rawBody, workerRunningTempDir)
+	if err != nil {
+		slog.Error("解析请求体失败", "request_id", requestID, "content_type", contentType, "err", err)
 		common.ErrorResponse(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -102,10 +107,11 @@ func (s *Server) handleInvoke(c *gin.Context) {
 	timeoutCtx, cancel := context.WithTimeout(c.Request.Context(), time.Duration(worker.TimeoutMS)*time.Millisecond)
 	defer cancel()
 
-	workerDir := filepath.Join(s.dataDir, "workers", worker.ID)
-	execResult := s.invoker.Execute(timeoutCtx, worker, requestID, input, true)
+	workerDir := filepath.Join(s.workerDir, worker.ID)
+	execResult := s.invoker.Execute(timeoutCtx, worker, requestID, workerRunningTempDir, input)
 
 	if execResult.TimedOut {
+		slog.Warn("Worker 执行超时", "request_id", requestID, "worker_id", worker.ID, "timeout_ms", worker.TimeoutMS)
 		common.ErrorResponse(c, http.StatusGatewayTimeout, "execution timeout")
 		return
 	}
@@ -115,9 +121,9 @@ func (s *Server) handleInvoke(c *gin.Context) {
 	}
 
 	if strings.TrimSpace(execResult.File) != "" {
-		if err := writeByFile(c, workerDir, execResult.Status, execResult.Headers, execResult.File); err != nil {
+		if err := writeByFile(c, workerDir, workerRunningTempDir, execResult.Status, execResult.Headers, execResult.File); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
-				common.ErrorResponse(c, http.StatusNotFound, "Worker资源不存在")
+				common.ErrorResponse(c, http.StatusNotFound, "Worker中的资源不存在")
 				return
 			}
 			common.ErrorResponse(c, http.StatusInternalServerError, "读取Worker资源失败")
@@ -155,17 +161,12 @@ func writeByBody(c *gin.Context, status int, headers map[string]string, body any
 	}
 }
 
-// writeByFile 按 file 模式写回响应。
-func writeByFile(c *gin.Context, workerDir string, status int, headers map[string]string, relativePath string) error {
-	filePath, err := getWorkerFilePath(workerDir, relativePath)
+// writeByFile 按 file 模式写回响应，支持从 Worker 目录或运行时目录读取文件。
+func writeByFile(c *gin.Context, workerDir string, workerRunningTempDir string, status int, headers map[string]string, relativePath string) error {
+	filePath, err := getRealFilePathFromResult(workerDir, workerRunningTempDir, relativePath)
 	if err != nil {
 		return err
 	}
-	file, err := os.Open(filePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
 	stat, err := os.Stat(filePath)
 	if err != nil {
 		return err
@@ -173,6 +174,11 @@ func writeByFile(c *gin.Context, workerDir string, status int, headers map[strin
 	if stat.IsDir() {
 		return fs.ErrNotExist
 	}
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
 
 	for key, val := range headers {
 		c.Header(key, val)
@@ -241,20 +247,15 @@ func headerFirstValue(raw string) string {
 }
 
 // parseRequetBodyToJson 按请求 Content-Type 解析请求体。
-func (s *Server) parseRequetBodyToJson(requestID string, contentType string, rawBody []byte) (parsed any, cleanup func(), err error) {
+func (s *Server) parseRequetBodyToJson(contentType string, rawBody []byte, workerRunningTempDir string) (parsed any, err error) {
 	parsed = map[string]any{}
-	cleanup = func() {}
 
 	mediaType, _, _ := mime.ParseMediaType(contentType)
 	mediaType = strings.ToLower(mediaType)
 	uploadDir := ""
 	if shouldStripRawBody(contentType) {
-		uploadDir = filepath.Join(s.dataDir, "temps", requestID)
-		cleanup = func() {
-			if rmErr := os.RemoveAll(uploadDir); rmErr != nil {
-				log.Printf("删除上传目录失败: %v", rmErr)
-			}
-		}
+		uploadDir = filepath.Join(workerRunningTempDir, "upload")
+		slog.Debug("准备 multipart 上传目录", "path", uploadDir)
 	}
 
 	switch {
@@ -267,36 +268,32 @@ func (s *Server) parseRequetBodyToJson(requestID string, contentType string, raw
 	default:
 		parsed = map[string]any{}
 	}
-	return parsed, cleanup, err
+	return parsed, err
 }
 
-// getWorkerFilePath result.file 的相对路径解析为绝对路径
-func getWorkerFilePath(workerDir string, rawPath string) (string, error) {
-	normalized := strings.TrimSpace(rawPath)
-	normalized = strings.ReplaceAll(normalized, "\\", "/")
-	normalized = strings.TrimLeft(normalized, "/")
-	if normalized == "" {
+// getRealFilePathFromResult 将 result.file 解析为 Worker 目录或运行时目录中的绝对路径。
+func getRealFilePathFromResult(workerDir string, workerRunningTempDir string, rawPath string) (string, error) {
+	targetPath := strings.TrimSpace(rawPath)
+	targetPath = strings.ReplaceAll(targetPath, "\\", "/")
+	if targetPath == "" {
 		return "", fs.ErrNotExist
 	}
 
-	cleanPath := path.Clean(normalized)
-	if cleanPath == "." || cleanPath == ".." || strings.HasPrefix(cleanPath, "../") {
-		return "", fs.ErrNotExist
+	realFilePath := ""
+	if strings.HasPrefix(targetPath, "/tmp") {
+		realFilePath = filepath.Join(workerRunningTempDir, strings.TrimLeft(strings.TrimPrefix(targetPath, "/tmp"), "/"))
+	} else {
+		if after, ok := strings.CutPrefix(targetPath, "./"); ok {
+			targetPath = after
+		}
+		if after, ok := strings.CutPrefix(targetPath, "/"); ok {
+			targetPath = after
+		}
+		realFilePath = filepath.Join(workerDir, targetPath)
 	}
+	slog.Debug("解析 Worker 返回文件路径", "raw_path", rawPath, "real_path", realFilePath)
 
-	workerAbs, err := filepath.Abs(workerDir)
-	if err != nil {
-		return "", err
-	}
-	fileAbs, err := filepath.Abs(filepath.Join(workerAbs, filepath.FromSlash(cleanPath)))
-	if err != nil {
-		return "", err
-	}
-
-	if fileAbs != workerAbs && !strings.HasPrefix(fileAbs, workerAbs+string(os.PathSeparator)) {
-		return "", fs.ErrNotExist
-	}
-	return fileAbs, nil
+	return realFilePath, nil
 }
 
 func buildRouteSuffix(route string, requestPath string) string {

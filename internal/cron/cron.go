@@ -3,6 +3,7 @@ package cron
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
@@ -137,7 +138,16 @@ func (m *Manager) runDueTasks(now time.Time) {
 			input := buildCronInput(entry.worker, requestID)
 			timeoutCtx, cancel := context.WithTimeout(context.Background(), time.Duration(entry.worker.TimeoutMS)*time.Millisecond)
 			defer cancel()
-			m.invoker.Execute(timeoutCtx, entry.worker, requestID, input, false)
+
+			worker := entry.worker
+			workerRunningTempDir, cleanup, err := executor.CreateWorkerRunningTempDir(m.invoker.WorkerRunningTempDir(), requestID)
+			if err != nil {
+				slog.Error("cron 创建运行时目录失败", "request_id", requestID, "worker_id", worker.ID, "err", err)
+				return
+			}
+			defer cleanup()
+			m.invoker.Execute(timeoutCtx, worker, requestID, workerRunningTempDir, input)
+
 		}()
 	}
 }

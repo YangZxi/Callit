@@ -13,6 +13,8 @@ import (
 	"github.com/google/uuid"
 )
 
+// AppConfig 中的值会被数据库覆盖
+// 如果你的配置不需要被数据库接管，请不要放在这里
 type AppConfig struct {
 	// AI
 	AI_BaseURL          string `config:"AI_BASE_URL"`
@@ -27,8 +29,11 @@ type AppConfig struct {
 }
 
 type Config struct {
+	LogLevel string
+
 	ServerPort           int
 	AdminPrefix          string
+	AdminToken           string
 	DataDir              string
 	DatabasePath         string
 	WorkersDir           string
@@ -36,9 +41,11 @@ type Config struct {
 	ChatSessionsDir      string
 	RuntimeLibDir        string
 	MaxFileSize          int64
-	AdminToken           string
-	LogLevel             string
-	AppConfig            AppConfig
+
+	// Runtime
+	EnableCgroupV2 bool
+
+	AppConfig AppConfig
 }
 
 type AppConfigDao interface {
@@ -85,13 +92,14 @@ func Load() Config {
 		DataDir:              getEnv("DATA_DIR", "./data"),
 		DatabasePath:         getEnv("DATABASE_PATH", "./data/app.db"),
 		WorkersDir:           getEnv("WORKERS_DIR", "./data/workers"),
-		WorkerRunningTempDir: getEnv("WORKER_RUNNING_TEMP_DIR", "./data/temp"),
+		WorkerRunningTempDir: getEnv("WORKER_RUNNING_TEMP_DIR", "./data/tmp"),
 		ChatSessionsDir:      getEnv("CHAT_SESSIONS_DIR", "./data/chat-sessions"),
 		RuntimeLibDir:        getEnv("RUNTIME_LIB_DIR", "./data/.lib"),
 
 		MaxFileSize: (1 << 20) * 100, // 100MB
 
-		LogLevel: getEnv("LOG_LEVEL", "info"),
+		LogLevel:       getEnv("LOG_LEVEL", "info"),
+		EnableCgroupV2: getBool("ENABLE_CGROUP_V2", false),
 	}
 	nomralizeConfig(&cfg)
 	return cfg

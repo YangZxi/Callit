@@ -1,7 +1,8 @@
+// Callit
 function handler(ctx) {
     const { request } = ctx;
     // const { headers, body, params } = request;
-    
+
     return {
         status: 200,
         body: {
@@ -13,3 +14,5 @@ function handler(ctx) {
         }
     }
 }
+
+module.exports = handler;

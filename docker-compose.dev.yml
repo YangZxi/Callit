@@ -1,0 +1,31 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: app-dev
+    container_name: callit-dev-app
+    working_dir: /app
+    environment:
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-123123}
+      SERVER_PORT: 3100
+      DATA_DIR: /app/data
+      DATABASE_PATH: /app/data/app.db
+      WORKERS_DIR: /app/data/workers
+      WORKER_RUNNING_TEMP_DIR: /app/data/tmp
+      CHAT_SESSIONS_DIR: /app/data/chat-sessions
+      RUNTIME_LIB_DIR: /app/data/.lib
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./:/app
+      - ./data:/app/data
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    privileged: true
+    command: ["go", "run", "./cmd"]
+
+volumes:
+  go-mod-cache:
+  go-build-cache:

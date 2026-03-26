@@ -69,3 +69,24 @@ func TestConfigSyncLoadsDefaultAndDBMCPConfig(t *testing.T) {
 		t.Fatalf("期望数据库覆盖后的 MCP_TOKEN 为 db-token，实际为 %q", cfg.AppConfig.MCP_Token)
 	}
 }
+
+func TestLoadUsesWorkerRunningTempDirAndRuntimeLibDir(t *testing.T) {
+	t.Setenv("DATA_DIR", "/opt/callit")
+	t.Setenv("WORKER_RUNNING_TEMP_DIR", "/opt/callit/tmp")
+	t.Setenv("RUNTIME_LIB_DIR", "/opt/callit/runtime-lib")
+	t.Setenv("ENABLE_CGROUP_V2", "true")
+
+	cfg := Load()
+	if cfg.DataDir != "/opt/callit" {
+		t.Fatalf("期望 DataDir 被环境变量覆盖，实际为 %q", cfg.DataDir)
+	}
+	if cfg.WorkerRunningTempDir != "/opt/callit/tmp" {
+		t.Fatalf("期望 WorkerRunningTempDir 被环境变量覆盖，实际为 %q", cfg.WorkerRunningTempDir)
+	}
+	if cfg.RuntimeLibDir != "/opt/callit/runtime-lib" {
+		t.Fatalf("期望 RuntimeLibDir 被环境变量覆盖，实际为 %q", cfg.RuntimeLibDir)
+	}
+	if !cfg.EnableCgroupV2 {
+		t.Fatalf("期望 EnableCgroupV2 被环境变量覆盖为 true")
+	}
+}
