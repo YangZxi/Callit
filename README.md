@@ -50,7 +50,12 @@ services:
       - "3100:3100"
     volumes:
       - ./data:/app/data
-    privileged: true
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+      - systempaths=unconfined
     restart: unless-stopped
 ```
 
