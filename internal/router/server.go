@@ -92,8 +92,8 @@ func (s *Server) handleInvoke(c *gin.Context) {
 			URL:     buildFullURL(c.Request),
 			Params:  buildQueryParams(c.Request.URL),
 			Headers: headers,
-			Body:    requestBody,
-			JSON:    parsed,
+			Body:    parsed,
+			BodyStr: requestBody,
 		},
 		Event: model.WorkerEvent{
 			RequestID: requestID,

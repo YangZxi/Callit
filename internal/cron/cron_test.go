@@ -87,7 +87,7 @@ func TestBuildCronInput(t *testing.T) {
 	if input.Event.Trigger != model.WorkerTriggerCron {
 		t.Fatalf("cron 输入 trigger 不正确: %#v", input.Event)
 	}
-	if input.Request.Method != "" || input.Request.URI != "" || input.Request.URL != "" || len(input.Request.Params) != 0 || len(input.Request.Headers) != 0 || input.Request.Body != "" || input.Request.JSON != nil {
+	if input.Request.Method != "" || input.Request.URI != "" || input.Request.URL != "" || len(input.Request.Params) != 0 || len(input.Request.Headers) != 0 || input.Request.BodyStr != "" || input.Request.Body != nil {
 		t.Fatalf("cron 输入 request 应为空对象: %#v", input.Request)
 	}
 }

@@ -98,8 +98,8 @@ docker compose up --build
     "uri": "/api/test?name=callit",
     "url": "http://127.0.0.1:3100/api/test?name=callit",
     "headers": {},
-    "body": "raw string",
-    "json": {}
+    "body": {},
+    "body_str": "raw string"
   }
 }
 ```
