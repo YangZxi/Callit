@@ -4,6 +4,7 @@ FROM golang:1.25-bookworm AS builder
 WORKDIR /app
 
 ENV CI=true
+ARG NSJAIL_VERSION=3.6
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -28,7 +29,7 @@ COPY . ./
 
 RUN bash ./build.sh \
     && mkdir -p /app/dist \
-    && git clone https://github.com/google/nsjail.git /tmp/nsjail-src \
+    && git clone --branch "${NSJAIL_VERSION}" --depth 1 https://github.com/google/nsjail.git /tmp/nsjail-src \
     && cd /tmp/nsjail-src \
     && make clean \
     && make \
