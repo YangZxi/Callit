@@ -19,7 +19,9 @@ A lightweight self-hosted personal serverless platform based on Docker.
 
 ## 屏幕截图
 ![Workers Page](./docs/images/workers_page.png)
+![Worker Edit](./docs/images/workers_edit.png)
 ![Worker Detail Page](./docs/images/workers_detail_page.png)
+![AppConfig Page](./docs/images/app_config_page.png)
 
 ## 核心能力
 不依赖 Docker、Kubernetes 等容器技术，提供开箱即用的 Serverless 体验  
