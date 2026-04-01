@@ -24,6 +24,10 @@ import (
 
 const dependencyTaskBusyMessage = "有其他安装或移除依赖请求在执行，请稍后再试。"
 
+const fixedPythonCommand = "python3.10"
+
+var execCommandContext = exec.CommandContext
+
 type pnpmListItem struct {
 	Dependencies map[string]struct {
 		Version string `json:"version"`
@@ -111,6 +115,13 @@ func (s *Server) manageDependencies(c *gin.Context) {
 		_ = writeSSEEvent(c, "done", gin.H{"ok": false})
 		return
 	}
+	if runtime == "python" {
+		if err := s.writeToPythonRequirements(c.Request.Context()); err != nil {
+			_ = writeSSEEvent(c, "error", gin.H{"message": err.Error()})
+			_ = writeSSEEvent(c, "done", gin.H{"ok": false})
+			return
+		}
+	}
 	_ = writeSSEEvent(c, "done", gin.H{"ok": true})
 }
 
@@ -177,11 +188,11 @@ func (s *Server) listNodeDependencies(ctx context.Context) ([]message.Dependency
 }
 
 func (s *Server) listPythonDependencies(ctx context.Context) ([]message.DependencyInfo, error) {
-	pipPath, _, err := s.ensurePythonDependencyEnv(ctx)
+	pythonPath, _, err := s.ensurePythonDependencyEnv(ctx)
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, pipPath, "list", "--format=json")
+	cmd := execCommandContext(ctx, pythonPath, buildPythonPipArgs("list", "--format=json")...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	output, err := cmd.Output()
@@ -189,6 +200,44 @@ func (s *Server) listPythonDependencies(ctx context.Context) ([]message.Dependen
 		return nil, fmt.Errorf("读取 Python 依赖失败: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	return parsePythonDependencies(output)
+}
+
+func (s *Server) rebuildDependencies(c *gin.Context) {
+	runtime, err := normalizeDependencyRuntime(c.Query("runtime"))
+	if err != nil {
+		apiError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if !s.tryAcquireDependencyTask() {
+		apiError(c, http.StatusConflict, dependencyTaskBusyMessage)
+		return
+	}
+	defer s.releaseDependencyTask()
+
+	c.Header("Content-Type", "text/event-stream; charset=utf-8")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	c.Status(http.StatusOK)
+
+	if runtime == "node" {
+		// none
+	} else if runtime == "python" {
+		pythonDir, err := s.pythonDependencyVersionDir()
+		if err != nil {
+			_ = writeSSEEvent(c, "error", gin.H{"message": fmt.Sprintf("解析 Python 依赖目录失败: %v", err)})
+			_ = writeSSEEvent(c, "done", gin.H{"ok": false})
+			return
+		}
+
+		if err := streamPythonDependencyRebuild(c, c.Request.Context(), pythonDir); err != nil {
+			_ = writeSSEEvent(c, "error", gin.H{"message": err.Error()})
+			_ = writeSSEEvent(c, "done", gin.H{"ok": false})
+			return
+		}
+	}
+	_ = writeSSEEvent(c, "done", gin.H{"ok": true})
 }
 
 func parseNodeDependencies(raw []byte) ([]message.DependencyInfo, error) {
@@ -271,17 +320,17 @@ func (s *Server) buildDependencyManageCommand(ctx context.Context, runtime strin
 		cmd.Dir = nodeDir
 		return cmd, nil
 	case "python":
-		pipPath, pythonDir, err := s.ensurePythonDependencyEnv(ctx)
+		pythonPath, pythonDir, err := s.ensurePythonDependencyEnv(ctx)
 		if err != nil {
 			return nil, err
 		}
 		args := []string{}
 		if action == "install" {
-			args = []string{"install", packageName}
+			args = buildPythonPipArgs("install", packageName)
 		} else {
-			args = []string{"uninstall", "-y", packageName}
+			args = buildPythonPipArgs("uninstall", "-y", packageName)
 		}
-		cmd := exec.CommandContext(ctx, pipPath, args...)
+		cmd := execCommandContext(ctx, pythonPath, args...)
 		cmd.Dir = pythonDir
 		return cmd, nil
 	default:
@@ -312,8 +361,8 @@ func (s *Server) ensureNodeDependencyDir() (string, error) {
 	return nodeDir, nil
 }
 
-func (s *Server) ensurePythonDependencyEnv(ctx context.Context) (pipPath string, pythonDir string, err error) {
-	pythonDir, err = filepath.Abs(filepath.Join(s.dataDir, ".lib", "python"))
+func (s *Server) ensurePythonDependencyEnv(ctx context.Context) (pythonPath string, pythonDir string, err error) {
+	pythonDir, err = s.pythonDependencyVersionDir()
 	if err != nil {
 		return "", "", fmt.Errorf("解析 Python 依赖目录失败: %w", err)
 	}
@@ -321,32 +370,163 @@ func (s *Server) ensurePythonDependencyEnv(ctx context.Context) (pipPath string,
 		return "", "", fmt.Errorf("创建 Python 依赖目录失败: %w", err)
 	}
 
-	pipPath = resolveVenvPipPath(pythonDir)
-	if pipPath != "" {
-		return pipPath, pythonDir, nil
+	if err := validatePythonDependencyEnv(ctx, pythonDir); err != nil {
+		return "", "", fmt.Errorf("%s，请进行环境重建", "Python 运行环境已损坏")
 	}
-
-	cmd := exec.CommandContext(ctx, "python3", "-m", "venv", pythonDir)
-	output, runErr := cmd.CombinedOutput()
-	if runErr != nil {
-		return "", "", fmt.Errorf("初始化 Python 虚拟环境失败: %w: %s", runErr, strings.TrimSpace(string(output)))
-	}
-	pipPath = resolveVenvPipPath(pythonDir)
-	if pipPath == "" {
-		return "", "", fmt.Errorf("初始化 Python 虚拟环境失败: pip 不存在")
-	}
-	return pipPath, pythonDir, nil
+	pythonPath, _ = resolvePythonVenvPaths(pythonDir)
+	return pythonPath, pythonDir, nil
 }
 
-func resolveVenvPipPath(pythonDir string) string {
-	candidates := []string{
-		filepath.Join(pythonDir, "bin", "pip"),
-		filepath.Join(pythonDir, "bin", "pip3"),
+func (s *Server) pythonDependencyVersionDir() (string, error) {
+	return filepath.Abs(filepath.Join(s.dataDir, ".lib", "python", "venv"))
+}
+
+func resolvePythonVenvPaths(pythonDir string) (pythonPath string, requirementsPath string) {
+	pythonRoot := filepath.Clean(strings.TrimSpace(pythonDir))
+	return filepath.Join(pythonRoot, "bin", "python"), filepath.Join(filepath.Dir(pythonRoot), "requirements.txt")
+}
+
+func buildPythonPipArgs(args ...string) []string {
+	result := make([]string, 0, len(args)+2)
+	result = append(result, "-m", "pip")
+	result = append(result, args...)
+	return result
+}
+
+func validatePythonDependencyEnv(ctx context.Context, pythonDir string) error {
+	pythonPath, _ := resolvePythonVenvPaths(pythonDir)
+	info, err := os.Stat(pythonPath)
+	if err != nil {
+		return fmt.Errorf("Python 虚拟环境不可用: %w", err)
 	}
-	for _, candidate := range candidates {
-		info, err := os.Stat(candidate)
-		if err == nil && !info.IsDir() {
-			return candidate
+	if info.IsDir() {
+		return fmt.Errorf("Python 虚拟环境不可用: %s 不是文件", pythonPath)
+	}
+
+	cmd := execCommandContext(ctx, pythonPath, buildPythonPipArgs("--version")...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("Python 虚拟环境不可用: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	if detectPythonSitePackages(pythonDir) == "" {
+		return fmt.Errorf("Python 虚拟环境不可用: site-packages 缺失")
+	}
+	return nil
+}
+
+func rebuildPythonDependencyEnv(ctx context.Context, pythonDir string) error {
+	_, requirementsPath := resolvePythonVenvPaths(pythonDir)
+	requirementsContent, readErr := os.ReadFile(requirementsPath)
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		return fmt.Errorf("读取 requirements.txt 失败: %w", readErr)
+	}
+
+	if err := os.RemoveAll(pythonDir); err != nil {
+		return fmt.Errorf("删除损坏的 Python 虚拟环境失败: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(pythonDir), 0o755); err != nil {
+		return fmt.Errorf("创建 Python 依赖目录失败: %w", err)
+	}
+
+	cmd := execCommandContext(ctx, fixedPythonCommand, "-m", "venv", pythonDir)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("初始化 Python 虚拟环境失败: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+
+	if err := os.WriteFile(requirementsPath, requirementsContent, 0o644); err != nil {
+		return fmt.Errorf("写入 requirements.txt 失败: %w", err)
+	}
+	if strings.TrimSpace(string(requirementsContent)) == "" {
+		return nil
+	}
+
+	pythonPath, _ := resolvePythonVenvPaths(pythonDir)
+	restoreCmd := execCommandContext(ctx, pythonPath, buildPythonPipArgs("install", "-r", requirementsPath)...)
+	restoreOutput, err := restoreCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("按 requirements.txt 恢复 Python 依赖失败: %w: %s", err, strings.TrimSpace(string(restoreOutput)))
+	}
+	return nil
+}
+
+func streamPythonDependencyRebuild(c *gin.Context, ctx context.Context, pythonDir string) error {
+	pythonPath, requirementsPath := resolvePythonVenvPaths(pythonDir)
+
+	_ = writeSSEEvent(c, "log", message.DependencyLogEvent{
+		Stream: "stdout",
+		Text:   "开始重建 Python 虚拟环境",
+	})
+	if err := rebuildPythonDependencyEnv(ctx, pythonDir); err != nil {
+		return err
+	}
+
+	_ = writeSSEEvent(c, "log", message.DependencyLogEvent{
+		Stream: "stdout",
+		Text:   "$ " + strings.Join(append([]string{fixedPythonCommand}, "-m", "venv", pythonDir), " "),
+	})
+	_ = writeSSEEvent(c, "log", message.DependencyLogEvent{
+		Stream: "stdout",
+		Text:   "Python 虚拟环境重建完成",
+	})
+
+	if content, err := os.ReadFile(requirementsPath); err == nil && strings.TrimSpace(string(content)) != "" {
+		_ = writeSSEEvent(c, "log", message.DependencyLogEvent{
+			Stream: "stdout",
+			Text:   "$ " + strings.Join(append([]string{pythonPath}, buildPythonPipArgs("install", "-r", requirementsPath)...), " "),
+		})
+		_ = writeSSEEvent(c, "log", message.DependencyLogEvent{
+			Stream: "stdout",
+			Text:   "已按 requirements.txt 恢复 Python 依赖",
+		})
+	}
+	return nil
+}
+
+func (s *Server) writeToPythonRequirements(ctx context.Context) error {
+	pythonPath, pythonDir, err := s.ensurePythonDependencyEnv(ctx)
+	if err != nil {
+		return err
+	}
+	_, requirementsPath := resolvePythonVenvPaths(pythonDir)
+	cmd := execCommandContext(ctx, pythonPath, buildPythonPipArgs("freeze")...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("刷新 requirements.txt 失败: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	if err := os.WriteFile(requirementsPath, normalizeRequirementsOutput(output), 0o644); err != nil {
+		return fmt.Errorf("写入 requirements.txt 失败: %w", err)
+	}
+	return nil
+}
+
+func normalizeRequirementsOutput(output []byte) []byte {
+	trimmed := strings.TrimSpace(string(output))
+	if trimmed == "" {
+		return []byte{}
+	}
+	return []byte(trimmed + "\n")
+}
+
+func detectPythonSitePackages(pythonEnvDir string) string {
+	libDir := filepath.Join(pythonEnvDir, "lib")
+	entries, err := os.ReadDir(libDir)
+	if err != nil {
+		return ""
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := strings.ToLower(strings.TrimSpace(entry.Name()))
+		if !strings.HasPrefix(name, "python") {
+			continue
+		}
+		sitePackages := filepath.Join(libDir, entry.Name(), "site-packages")
+		stat, err := os.Stat(sitePackages)
+		if err == nil && stat.IsDir() {
+			return sitePackages
 		}
 	}
 	return ""

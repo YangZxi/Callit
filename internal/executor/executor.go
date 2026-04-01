@@ -28,6 +28,7 @@ const (
 	defaultNodeCgroupMemMaxBytes   = 64 * 1024 * 1024
 	defaultNodeMaxOldSpaceSizeMB   = 64
 	defaultSandboxRlimitFile       = 128
+	fixedPythonCommand             = "python3.10"
 
 	sandboxWorkspacePath = "/workspace"
 	sandboxRuntimePath   = "/runtime-lib"
@@ -281,7 +282,7 @@ func sandboxCgroupMemMaxBytesByRuntime(runtime string) int64 {
 func runtimeLibNameByRuntime(runtime string) string {
 	switch runtime {
 	case "python":
-		return "python"
+		return filepath.Join("python", "venv")
 	case "node":
 		return "node"
 	default:
@@ -292,7 +293,7 @@ func runtimeLibNameByRuntime(runtime string) string {
 func resolveRuntimeExecutable(runtime string) (string, error) {
 	switch runtime {
 	case "python":
-		return exec.LookPath("python3")
+		return exec.LookPath(fixedPythonCommand)
 	case "node":
 		return exec.LookPath("node")
 	default:
@@ -501,7 +502,7 @@ func nodeRuntimeModulePaths(runtimeDir string, executablePath string) []string {
 }
 
 func pythonRuntimeModulePaths(runtimeDir string) []string {
-	runtimeRoot := filepath.Join(runtimeDir, "python")
+	runtimeRoot := filepath.Join(runtimeDir, runtimeLibNameByRuntime("python"))
 	sitePackages := detectPythonSitePackages(runtimeRoot)
 	if sitePackages == "" {
 		return nil

@@ -115,7 +115,7 @@ func TestBuildSandboxEnvForNode(t *testing.T) {
 
 func TestBuildSandboxEnvForPython(t *testing.T) {
 	runtimeDir := t.TempDir()
-	sitePackages := filepath.Join(runtimeDir, "python", "lib", "python3.12", "site-packages")
+	sitePackages := filepath.Join(runtimeDir, "python", "venv", "lib", "python3.10", "site-packages")
 	if err := os.MkdirAll(sitePackages, 0o755); err != nil {
 		t.Fatalf("创建 site-packages 失败: %v", err)
 	}
@@ -129,8 +129,14 @@ func TestBuildSandboxEnvForPython(t *testing.T) {
 			break
 		}
 	}
-	if pythonPath != "/runtime-lib/lib/python3.12/site-packages" {
+	if pythonPath != "/runtime-lib/lib/python3.10/site-packages" {
 		t.Fatalf("PYTHONPATH 不正确，got=%q", pythonPath)
+	}
+}
+
+func TestRuntimeLibNameByRuntimeForPythonUsesFixedVersionDir(t *testing.T) {
+	if got := runtimeLibNameByRuntime("python"); got != filepath.Join("python", "venv") {
+		t.Fatalf("Python runtime 目录不正确，got=%q", got)
 	}
 }
 

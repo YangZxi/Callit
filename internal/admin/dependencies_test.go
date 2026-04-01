@@ -1,6 +1,15 @@
 package admin
 
-import "testing"
+import (
+	"context"
+	"net/http"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"callit/internal/config"
+	"callit/internal/router"
+)
 
 func TestNormalizeDependencyRuntime(t *testing.T) {
 	valid := []string{"node", "python", " Node ", "PYTHON"}
@@ -98,5 +107,78 @@ func TestDependencyTaskAcquireRelease(t *testing.T) {
 	s.releaseDependencyTask()
 	if !s.tryAcquireDependencyTask() {
 		t.Fatalf("释放后应可再次获取任务锁")
+	}
+}
+
+func TestPythonDependencyVersionDir(t *testing.T) {
+	s := &Server{dataDir: "/app/data"}
+
+	got, err := s.pythonDependencyVersionDir()
+	if err != nil {
+		t.Fatalf("pythonDependencyVersionDir 失败: %v", err)
+	}
+
+	want := filepath.Join("/app/data", ".lib", "python", "venv")
+	if got != want {
+		t.Fatalf("Python 依赖目录不正确，got=%q want=%q", got, want)
+	}
+}
+
+func TestResolvePythonVenvPaths(t *testing.T) {
+	pythonDir := filepath.Join("/data", ".lib", "python", "venv")
+
+	pythonPath, requirementsPath := resolvePythonVenvPaths(pythonDir)
+	if pythonPath != filepath.Join(pythonDir, "bin", "python") {
+		t.Fatalf("python 可执行文件路径不正确，got=%q", pythonPath)
+	}
+	if requirementsPath != filepath.Join("/data", ".lib", "python", "requirements.txt") {
+		t.Fatalf("requirements.txt 路径不正确，got=%q", requirementsPath)
+	}
+}
+
+func TestBuildPythonPipCommandUsesPythonModuleMode(t *testing.T) {
+	pythonPath := filepath.Join("/data", ".lib", "python", "venv", "bin", "python")
+
+	args := buildPythonPipArgs("install", "requests")
+	got := append([]string{pythonPath}, args...)
+	want := []string{pythonPath, "-m", "pip", "install", "requests"}
+	if len(got) != len(want) {
+		t.Fatalf("命令参数长度不正确，got=%v want=%v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("命令参数不正确，got=%v want=%v", got, want)
+		}
+	}
+}
+
+func TestEnsurePythonDependencyEnvReturnsBrokenMessage(t *testing.T) {
+	s := &Server{dataDir: t.TempDir()}
+
+	_, _, err := s.ensurePythonDependencyEnv(context.Background())
+	if err == nil {
+		t.Fatalf("缺少 venv 时应返回错误")
+	}
+	if !strings.Contains(err.Error(), "Python 运行环境已损坏，请进行环境重建") {
+		t.Fatalf("错误信息不正确，got=%q", err.Error())
+	}
+}
+
+func TestRebuildDependenciesIgnoresNodeRuntime(t *testing.T) {
+	cfg := config.Config{
+		AdminPrefix: "/admin",
+		AdminToken:  "test-token",
+		DataDir:     t.TempDir(),
+	}
+	engine := NewEngine(openAdminTestStore(t), router.New(), nil, &cfg)
+
+	resp := doAdminJSONRequest(t, engine, http.MethodPost, "/admin/api/dependencies/rebuild?runtime=node", nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("node 重建接口应直接成功，code=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	body := resp.Body.String()
+	if !strings.Contains(body, "event: done") || !strings.Contains(body, "\"ok\":true") {
+		t.Fatalf("node 重建接口返回不正确: %s", body)
 	}
 }

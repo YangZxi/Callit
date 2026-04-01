@@ -94,6 +94,7 @@ func NewEngine(store *db.Store, reg *router.Registry, cronReloader interface{ Re
 	{
 		api.GET("/dependencies", s.listDependencies)
 		api.POST("/dependencies/manage", s.manageDependencies)
+		api.POST("/dependencies/rebuild", s.rebuildDependencies)
 
 		api.GET("/workers", s.listWorkers)
 		api.GET("/workers/:id", s.getWorker)
