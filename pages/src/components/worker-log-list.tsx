@@ -1,5 +1,6 @@
-import { Chip } from "@heroui/react";
-import { Button } from "@heroui/react";
+import { useEffect, useMemo, useState } from "react";
+import { Button, Chip, Tabs } from "@heroui/react";
+
 import Pagination from "@/components/heroui/Pagination";
 
 export type WorkerLogItem = {
@@ -17,17 +18,26 @@ export type WorkerLogItem = {
   created_at: string;
 };
 
+type LogTabKey = "result" | "error" | "stdin" | "stdout" | "stderr";
+
 type WorkerLogListProps = {
   loading: boolean;
   items: WorkerLogItem[];
-  expandedIds: Set<string>;
   page: number;
-  pageSize: number;
-  total: number;
   totalPages: number;
-  onToggle: (id: string) => void;
   onPageChange: (page: number) => void;
+  onRefresh: () => void;
 };
+
+type LogTabConfig = {
+  key: LogTabKey;
+  label: string;
+  content: string;
+  toneClassName: string;
+  labelClassName: string;
+};
+
+const logTabOrder: LogTabKey[] = ["result", "error", "stdin", "stdout", "stderr"];
 
 function formatLogTime(raw: string): string {
   const dt = new Date(raw);
@@ -51,16 +61,6 @@ function normalizeTrigger(trigger?: string): "http" | "cron" {
   return trigger === "cron" ? "cron" : "http";
 }
 
-function extractRequestURI(raw: string): string {
-  if (!raw) return "";
-  try {
-    const parsed = JSON.parse(raw) as { request?: { uri?: unknown } };
-    return typeof parsed?.request?.uri === "string" ? parsed.request.uri : "";
-  } catch {
-    return "";
-  }
-}
-
 function renderRunStatus(error: string) {
   if (error) {
     return <Chip color="danger" size="sm" variant="soft">Error</Chip>;
@@ -68,103 +68,236 @@ function renderRunStatus(error: string) {
   return <Chip color="success" size="sm" variant="soft">Success</Chip>;
 }
 
+function buildLogTabs(item: WorkerLogItem): LogTabConfig[] {
+  const formattedResult = formatResultForDisplay(item.result);
+  const formattedStdin = formatResultForDisplay(item.stdin);
+  const tabMap: Record<LogTabKey, LogTabConfig> = {
+    result: {
+      key: "result",
+      label: "result",
+      content: formattedResult,
+      toneClassName: "bg-accent/20 text-accent-600",
+      labelClassName: "text-accent",
+    },
+    error: {
+      key: "error",
+      label: "error",
+      content: item.error,
+      toneClassName: "bg-danger/20 text-danger-600",
+      labelClassName: "text-danger",
+    },
+    stdin: {
+      key: "stdin",
+      label: "stdin",
+      content: formattedStdin,
+      toneClassName: "bg-success/20 text-success-700",
+      labelClassName: "text-success",
+    },
+    stdout: {
+      key: "stdout",
+      label: "stdout",
+      content: item.stdout,
+      toneClassName: "bg-default/40 text-default-700",
+      labelClassName: "text-default-800",
+    },
+    stderr: {
+      key: "stderr",
+      label: "stderr",
+      content: item.stderr,
+      toneClassName: "bg-warning/20 text-warning-700",
+      labelClassName: "text-warning",
+    },
+  };
+
+  return logTabOrder
+    .map((key) => tabMap[key])
+    .filter((tab) => tab.content);
+}
+
+function getDefaultTabKey(tabs: LogTabConfig[]): LogTabKey | null {
+  if (tabs.some((tab) => tab.key === "error")) {
+    return "error";
+  }
+  return tabs[0]?.key ?? null;
+}
+
 export default function WorkerLogList({
   loading,
   items,
-  expandedIds,
   page,
   totalPages,
-  onToggle,
   onPageChange,
+  onRefresh,
 }: WorkerLogListProps) {
-  return (
-    <div className="flex max-h-[100%] flex-col gap-2 pr-1 relative">
+  const [selectedLogId, setSelectedLogId] = useState("");
+  const [activeTabsByLogId, setActiveTabsByLogId] = useState<Record<string, LogTabKey>>({});
 
-      <div className="w-full flex justify-end">
+  useEffect(() => {
+    if (items.length === 0) {
+      setSelectedLogId("");
+      return;
+    }
+
+    setSelectedLogId((prev) => {
+      if (prev && items.some((item) => item.id === prev)) {
+        return prev;
+      }
+      return items[0].id;
+    });
+  }, [items]);
+
+  const selectedItem = useMemo(
+    () => items.find((item) => item.id === selectedLogId) ?? items[0] ?? null,
+    [items, selectedLogId],
+  );
+
+  const availableTabs = useMemo(
+    () => (selectedItem ? buildLogTabs(selectedItem) : []),
+    [selectedItem],
+  );
+
+  const activeTabKey = useMemo(() => {
+    if (!selectedItem) return null;
+    const savedTabKey = activeTabsByLogId[selectedItem.id];
+    if (savedTabKey && availableTabs.some((tab) => tab.key === savedTabKey)) {
+      return savedTabKey;
+    }
+    return getDefaultTabKey(availableTabs);
+  }, [activeTabsByLogId, availableTabs, selectedItem]);
+
+  return (
+    <div className="relative flex h-[500px] flex-col gap-2 pr-1">
+      <div className="flex justify-end gap-2">
         <Pagination
           page={page}
           totalPages={totalPages}
           onPageChange={onPageChange}
         />
+        <Button size="sm" variant="secondary" onPress={onRefresh}>
+          刷新
+        </Button>
       </div>
-      <div className="overflow-auto h-[500px]">
-        {loading ? (
-          <p className="text-sm text-default-500">正在加载运行日志...</p>
-        ) : null}
-        {!loading && items.length === 0 ? (
-          <div className="rounded-lg border border-default-200 px-3 py-4 text-sm text-default-500">
-            暂无运行日志
-          </div>
-        ) : null}
-        {!loading && items.length > 0 ? (
-          items.map((item) => {
-            const expanded = expandedIds.has(item.id);
-            const formattedResult = formatResultForDisplay(item.result);
-            const formattedStdin = formatResultForDisplay(item.stdin);
-            const trigger = normalizeTrigger(item.trigger);
-            const requestURI = trigger === "http" ? extractRequestURI(item.stdin) : "";
-            return (
-              <div key={item.id} className="rounded-lg border border-default-200 p-3">
-                <div className="flex items-start justify-between gap-3" onClick={() => onToggle(item.id)}>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-default-800">request_id: {item.request_id}</p>
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-default-500">
-                      <span>触发类型 {trigger === "http" ? "HTTP" : "Cron"}</span>
-                      {trigger === "http" && requestURI ? <span className="max-w-[240px] truncate">URI {requestURI}</span> : null}
-                      {trigger === "http" ? <span>HTTP Status {item.status}</span> : null}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-default-500">
-                      <span>{formatLogTime(item.created_at)}</span>
-                      {renderRunStatus(item.error)}
-                      <span>耗时 {item.duration_ms}ms</span>
-                    </div>
+
+      {loading ? (
+        <p className="text-sm text-default-500">正在加载运行日志...</p>
+      ) : null}
+
+      {!loading && items.length === 0 ? (
+        <div className="rounded-lg border border-default-200 px-3 py-4 text-sm text-default-500">
+          暂无运行日志
+        </div>
+      ) : null}
+
+      {!loading && items.length > 0 ? (
+        <div className="grid min-h-0 flex-1 grid-cols-[200px_minmax(0,1fr)] gap-3">
+          <div className="min-h-0 overflow-auto rounded-lg border border-default-200">
+            {items.map((item) => {
+              const trigger = normalizeTrigger(item.trigger);
+              const isSelected = item.id === selectedItem?.id;
+              return (
+                <div
+                  key={item.id}
+                  className={[
+                    "w-full cursor-pointer border-b border-default-200 px-3 py-3 text-left transition-all duration-150 last:border-b-0",
+                    isSelected ? "bg-[#f1f1f1] dark:bg-[#464748]" : "hover:bg-[#eaebec] dark:hover:bg-[#464748] hover:shadow-sm",
+                  ].join(" ")}
+                  onClick={() => {
+                    setSelectedLogId(item.id);
+                    if (!activeTabKey) {
+                      return;
+                    }
+
+                    const nextTabs = buildLogTabs(item);
+                    if (!nextTabs.some((tab) => tab.key === activeTabKey)) {
+                      return;
+                    }
+
+                    setActiveTabsByLogId((prev) => ({
+                      ...prev,
+                      [item.id]: activeTabKey,
+                    }));
+                  }}
+                >
+                  <div className="space-y-1">
+                    <p className="truncate text-sm font-medium text-default-800" title={item.request_id}>
+                      {item.request_id}
+                    </p>
+                    <p className="text-xs text-default-500">
+                      触发类型：{trigger === "http" ? "HTTP" : "Cron"}
+                    </p>
+                    <p className="text-xs text-default-500">
+                      时间：{formatLogTime(item.created_at)}
+                    </p>
                   </div>
-                  <Button size="sm" variant="secondary" onPress={() => onToggle(item.id)}>
-                    {expanded ? "收起详情" : "展开详情"}
-                  </Button>
                 </div>
-                {expanded ? (
-                  <div className="mt-3 space-y-2">
-                    {item.error ? (
-                      <div>
-                        <p className="mb-1 text-xs font-medium text-danger">error</p>
-                        <pre className="max-h-40 overflow-auto rounded-md p-2 font-mono text-xs whitespace-pre-wrap break-words bg-danger/20 text-danger-600">{item.error}</pre>
-                      </div>
-                    ) : null}
-                    {item.stderr ? (
-                      <div>
-                        <p className="mb-1 text-xs font-medium text-warning">stderr</p>
-                        <pre className="max-h-40 overflow-auto rounded-md p-2 font-mono text-xs whitespace-pre-wrap break-words bg-warning/20 text-warning-700">{item.stderr}</pre>
-                      </div>
-                    ) : null}
-                    {item.result ? (
-                      <div>
-                        <p className="mb-1 text-xs font-medium text-accent">result</p>
-                        <pre className="max-h-40 overflow-auto rounded-md p-2 font-mono text-xs whitespace-pre-wrap break-words bg-accent/20 text-accent-600">{formattedResult}</pre>
-                      </div>
-                    ) : null}
-                    {item.stdin ? (
-                      <div>
-                        <p className="mb-1 text-xs font-medium text-success">stdin</p>
-                        <pre className="max-h-40 overflow-auto rounded-md p-2 font-mono text-xs whitespace-pre-wrap break-words bg-success/20 text-success-700">{formattedStdin}</pre>
-                      </div>
-                    ) : null}
-                    {item.stdout ? (
-                      <div>
-                        <p className="mb-1 text-xs font-medium text-default-800">stdout</p>
-                        <pre className="max-h-40 overflow-auto rounded-md p-2 font-mono text-xs whitespace-pre-wrap break-words bg-default/40 text-default-700">{item.stdout}</pre>
-                      </div>
-                    ) : null}
-                    {!item.error && !item.stderr && !item.result && !item.stdin && !item.stdout ? (
-                      <p className="text-xs text-default-400">无详细输出</p>
-                    ) : null}
+              );
+            })}
+          </div>
+
+          <div className="min-h-0 rounded-lg border border-default-200">
+            {selectedItem ? (
+              <div className="flex h-full min-h-0 flex-col">
+                <div className="flex items-center justify-between border-b border-default-200 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-default-800" title={selectedItem.id}>
+                      {selectedItem.request_id}
+                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-default-500">
+                      {renderRunStatus(selectedItem.error)}
+                      <span>耗时 {selectedItem.duration_ms}ms</span>
+                      {normalizeTrigger(selectedItem.trigger) === "http" ? (
+                        <span>HTTP Status {selectedItem.status}</span>
+                      ) : null}
+                    </div>
                   </div>
-                ) : null}
+                </div>
+
+                <div className="min-h-0 flex-1 p-1">
+                  {availableTabs.length > 0 && activeTabKey ? (
+                    <Tabs
+                      aria-label="日志详情"
+                      className="flex h-full min-h-0 flex-col"
+                      selectedKey={activeTabKey}
+                      onSelectionChange={(key) => {
+                        if (!selectedItem) return;
+                        setActiveTabsByLogId((prev) => ({
+                          ...prev,
+                          [selectedItem.id]: String(key) as LogTabKey,
+                        }));
+                      }}
+                    >
+                      <Tabs.ListContainer className="px-1">
+                        <Tabs.List aria-label="日志详情 Tab" className="w-[unset]">
+                          {availableTabs.map((tab) => (
+                            <Tabs.Tab id={tab.key} key={tab.key}>
+                              {tab.label}
+                              <Tabs.Indicator />
+                            </Tabs.Tab>
+                          ))}
+                        </Tabs.List>
+                      </Tabs.ListContainer>
+
+                      {availableTabs.map((tab) => (
+                        <Tabs.Panel className="min-h-0 flex-1 pt-2" id={tab.key} key={tab.key}>
+                          <div className="flex h-full min-h-0 flex-col">
+                            <pre className={`min-h-0 flex-1 overflow-auto rounded-md p-3 font-mono text-xs whitespace-pre-wrap break-words ${tab.toneClassName}`}>
+                              {tab.content}
+                            </pre>
+                          </div>
+                        </Tabs.Panel>
+                      ))}
+                    </Tabs>
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-sm text-default-400">
+                      无详细输出
+                    </div>
+                  )}
+                </div>
               </div>
-            );
-          })
-        ) : null}
-      </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

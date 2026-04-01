@@ -88,7 +88,6 @@ export default function WorkerDetailPage() {
   const [logPage, setLogPage] = useState(1);
   const [logTotal, setLogTotal] = useState(0);
   const [logItems, setLogItems] = useState<WorkerLogItem[]>([]);
-  const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set());
 
   const selectedKeys = useMemo(() => (selectedFile ? new Set<string>([selectedFile]) : new Set<string>()), [selectedFile]);
   const defaultRunUrl = useMemo(() => {
@@ -410,20 +409,7 @@ export default function WorkerDetailPage() {
 
   const openWorkerLogsModal = () => {
     setLogPage(1);
-    setExpandedLogIds(new Set());
     setLogModalOpen(true);
-  };
-
-  const toggleLogDetails = (logID: string) => {
-    setExpandedLogIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(logID)) {
-        next.delete(logID);
-      } else {
-        next.add(logID);
-      }
-      return next;
-    });
   };
 
   const handleChatFilesChanged = useCallback(async () => {
@@ -622,21 +608,15 @@ export default function WorkerDetailPage() {
         header="最近运行日志"
         onOpenChange={(open) => {
           setLogModalOpen(open);
-          if (!open) {
-            setExpandedLogIds(new Set());
-          }
         }}
       >
         <WorkerLogList
           loading={logLoading}
           items={logItems}
-          expandedIds={expandedLogIds}
           page={logPage}
-          pageSize={workerLogsPageSize}
-          total={logTotal}
           totalPages={logTotalPages}
-          onToggle={toggleLogDetails}
           onPageChange={setLogPage}
+          onRefresh={() => void loadWorkerLogs(logPage)}
         />
       </XModal>
       {/* <div className="absolute bottom-4 right-4 z-40">
