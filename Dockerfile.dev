@@ -1,9 +1,11 @@
-# syntax=docker/dockerfile:1.7
-
-FROM golang:1.25-bookworm AS app-dev
+FROM golang:1.25-bookworm@sha256:29e59af995c51a5bf63d072eca973b918e0e7af4db0e4667aa73f1b8da1a6d8c AS golang-runtime
+FROM python:3.10-bookworm AS app-dev
 
 WORKDIR /app
 ARG NSJAIL_VERSION=3.6
+
+COPY --from=golang-runtime /usr/local/go /usr/local/go
+ENV PATH=/usr/local/go/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -22,9 +24,6 @@ RUN apt-get update \
        npm \
        pkg-config \
        protobuf-compiler \
-       python3 \
-       python3-pip \
-       python3-venv \
        sqlite3 \
     && git clone --branch "${NSJAIL_VERSION}" --depth 1 https://github.com/google/nsjail.git /tmp/nsjail-src \
     && cd /tmp/nsjail-src \

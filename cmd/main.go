@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -18,9 +19,13 @@ import (
 	"callit/internal/cron"
 	"callit/internal/db"
 	"callit/internal/executor"
+	magicapi "callit/internal/magic-api"
+	magicDB "callit/internal/magic-api/db"
+	magicKV "callit/internal/magic-api/kv"
 	"callit/internal/mcp"
 	"callit/internal/router"
 
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -39,6 +44,16 @@ func main() {
 		os.Exit(1)
 	}
 	defer store.Close()
+	workerDBService, err := magicDB.OpenSQLiteService(filepath.Join(cfg.DataDir, "worker.db"))
+	if err != nil {
+		slog.Error("初始化 Worker 数据库失败", "err", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if closeErr := workerDBService.Close(); closeErr != nil {
+			slog.Error("关闭 Worker 数据库失败", "err", closeErr)
+		}
+	}()
 	if err := cfg.Sync(context.Background(), store.AppConfig); err != nil {
 		slog.Error("加载应用配置失败", "err", err)
 		os.Exit(1)
@@ -59,22 +74,33 @@ func main() {
 		os.Exit(1)
 	}
 
-	routerEngine := router.NewEngine(store, reg, cfg.WorkersDir, invoker)
+	routerEngine := router.NewEngine(store, reg, cfg, invoker)
 	adminEngine := admin.NewEngine(store, reg, cronManager, &cfg)
 	var mcpHandler http.Handler
 	if cfg.AppConfig.MCP_Enable {
 		mcpHandler = mcp.NewHandler(store, reg, cronManager, &cfg)
 	}
 	handler := serverRouteHandler(adminEngine, mcpHandler, routerEngine, cfg.AdminPrefix, cfg.AppConfig.MCP_Enable)
+	magicHandler := magicapi.NewHandler(magicapi.Options{
+		KVService: magicKV.NewService(newRedisStore(cfg)),
+		DBService: workerDBService,
+	})
+	serverAddr, magicAddr := buildListenAddrs(cfg.ServerPort, cfg.MagicServerPort)
 
 	httpServer := &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.ServerPort),
+		Addr:              serverAddr,
 		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	magicServer := &http.Server{
+		Addr:              magicAddr,
+		Handler:           magicHandler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	localIP := resolveLocalIPv4()
 	slog.Info("服务启动", "url", fmt.Sprintf("http://%s:%d", localIP, cfg.ServerPort))
-	slog.Info("Admin 服务入口", "url", fmt.Sprintf("http://%s:%d%s", localIP, cfg.ServerPort, cfg.AdminPrefix))
+	slog.Info("Admin 服务入口", "url", fmt.Sprintf("http://%s:%d%s/", localIP, cfg.ServerPort, cfg.AdminPrefix))
+	slog.Info("Magic 服务入口", "url", fmt.Sprintf("http://127.0.0.1:%d", cfg.MagicServerPort))
 	slog.Info("AdminToken", "token", cfg.AdminToken)
 	if cfg.AppConfig.MCP_Enable {
 		slog.Info("MCP 服务入口", "url", fmt.Sprintf("http://%s:%d/mcp", localIP, cfg.ServerPort))
@@ -84,6 +110,12 @@ func main() {
 	group.Go(func() error {
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return fmt.Errorf("服务异常: %w", err)
+		}
+		return nil
+	})
+	group.Go(func() error {
+		if err := magicServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("magic 服务异常: %w", err)
 		}
 		return nil
 	})
@@ -103,6 +135,9 @@ func main() {
 		defer cancel()
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("关闭服务失败: %w", err)
+		}
+		if err := magicapi.Shutdown(shutdownCtx, magicServer); err != nil {
+			return fmt.Errorf("关闭 magic 服务失败: %w", err)
 		}
 		return nil
 	})
@@ -145,7 +180,19 @@ func ensureRuntimeDirs(cfg config.Config) error {
 			return err
 		}
 	}
+	if err := executor.SyncWorkerSDKFiles(cfg.RuntimeLibDir); err != nil {
+		return err
+	}
 	return nil
+}
+
+func newRedisStore(cfg config.Config) magicKV.Store {
+	client := redis.NewClient(&redis.Options{
+		Addr:     cfg.RedisAddr,
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
+	})
+	return magicKV.NewRedisStore(client)
 }
 
 func resolveLocalIPv4() string {
@@ -165,6 +212,10 @@ func resolveLocalIPv4() string {
 		return ip4.String()
 	}
 	return "127.0.0.1"
+}
+
+func buildListenAddrs(serverPort int, magicServerPort int) (string, string) {
+	return fmt.Sprintf(":%d", serverPort), fmt.Sprintf("127.0.0.1:%d", magicServerPort)
 }
 
 func serverRouteHandler(adminHandler http.Handler, mcpHandler http.Handler, routerHandler http.Handler, adminPrefix string, mcpEnabled bool) http.Handler {

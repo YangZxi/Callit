@@ -75,6 +75,9 @@ func TestLoadUsesWorkerRunningTempDirAndRuntimeLibDir(t *testing.T) {
 	t.Setenv("WORKER_RUNNING_TEMP_DIR", "/opt/callit/tmp")
 	t.Setenv("RUNTIME_LIB_DIR", "/opt/callit/runtime-lib")
 	t.Setenv("ENABLE_CGROUP_V2", "true")
+	t.Setenv("REDIS_ADDR", "redis:6379")
+	t.Setenv("REDIS_PASSWORD", "pwd")
+	t.Setenv("REDIS_DB", "2")
 
 	cfg := Load()
 	if cfg.DataDir != "/opt/callit" {
@@ -88,5 +91,15 @@ func TestLoadUsesWorkerRunningTempDirAndRuntimeLibDir(t *testing.T) {
 	}
 	if !cfg.EnableCgroupV2 {
 		t.Fatalf("期望 EnableCgroupV2 被环境变量覆盖为 true")
+	}
+	if cfg.RedisAddr != "redis:6379" || cfg.RedisPassword != "pwd" || cfg.RedisDB != 2 {
+		t.Fatalf("期望 Redis 配置被环境变量覆盖，got=%+v", cfg)
+	}
+}
+
+func TestLoadUsesDefaultRedisAddr(t *testing.T) {
+	cfg := Load()
+	if cfg.RedisAddr != "redis:6379" {
+		t.Fatalf("期望默认 RedisAddr 为 redis:6379，实际为 %q", cfg.RedisAddr)
 	}
 }

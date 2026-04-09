@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -89,7 +90,7 @@ func TestBuildSandboxEnvForNode(t *testing.T) {
 	runtimeDir := filepath.Join("/data", ".lib")
 	executablePath := "/opt/node/bin/node"
 
-	envList := buildSandboxEnv(runtimeDir, "node", executablePath)
+	envList := buildSandboxEnv(runtimeDir, "node", executablePath, workerEnvConfig{})
 
 	var nodePath string
 	for _, item := range envList {
@@ -120,7 +121,7 @@ func TestBuildSandboxEnvForPython(t *testing.T) {
 		t.Fatalf("创建 site-packages 失败: %v", err)
 	}
 
-	envList := buildSandboxEnv(runtimeDir, "python", "/usr/bin/python3")
+	envList := buildSandboxEnv(runtimeDir, "python", "/usr/bin/python3", workerEnvConfig{})
 
 	var pythonPath string
 	for _, item := range envList {
@@ -129,13 +130,72 @@ func TestBuildSandboxEnvForPython(t *testing.T) {
 			break
 		}
 	}
-	if pythonPath != "/runtime-lib/lib/python3.10/site-packages" {
+	if pythonPath != strings.Join([]string{"/runtime-lib", "/runtime-lib/venv/lib/python3.10/site-packages"}, string(os.PathListSeparator)) {
 		t.Fatalf("PYTHONPATH 不正确，got=%q", pythonPath)
 	}
 }
 
+func TestBuildSandboxEnvForPythonUsesSdkOutsideVenv(t *testing.T) {
+	runtimeDir := t.TempDir()
+	sitePackages := filepath.Join(runtimeDir, "python", "venv", "lib", "python3.10", "site-packages")
+	if err := os.MkdirAll(sitePackages, 0o755); err != nil {
+		t.Fatalf("创建 site-packages 失败: %v", err)
+	}
+
+	envList := buildSandboxEnv(runtimeDir, "python", "/usr/bin/python3", workerEnvConfig{})
+
+	var pythonPath string
+	for _, item := range envList {
+		if strings.HasPrefix(item, "PYTHONPATH=") {
+			pythonPath = strings.TrimPrefix(item, "PYTHONPATH=")
+			break
+		}
+	}
+	if pythonPath != strings.Join([]string{"/runtime-lib", "/runtime-lib/venv/lib/python3.10/site-packages"}, string(os.PathListSeparator)) {
+		t.Fatalf("PYTHONPATH 不正确，got=%q", pythonPath)
+	}
+}
+
+func TestBuildSandboxEnvIncludesKVEnv(t *testing.T) {
+	envList := buildSandboxEnv("/data/.lib", "node", "/usr/bin/node", workerEnvConfig{
+		CallitMagicApiBaseURL: "http://127.0.0.1:31001",
+		WorkerID:              "worker-1",
+		RequestID:             "req-1",
+	})
+
+	assertContains := func(want string) {
+		t.Helper()
+		if !slices.Contains(envList, want) {
+			t.Fatalf("环境变量中缺少 %q，env=%v", want, envList)
+		}
+	}
+
+	assertContains("CALLIT_MAGIC_API_BASE_URL=http://127.0.0.1:31001")
+	assertContains("CALLIT_WORKER_ID=worker-1")
+	assertContains("CALLIT_REQUEST_ID=req-1")
+	if slices.ContainsFunc(envList, func(item string) bool {
+		return strings.HasPrefix(item, "CALLIT_INTERNAL_TOKEN=")
+	}) {
+		t.Fatalf("环境变量中不应包含 CALLIT_INTERNAL_TOKEN，env=%v", envList)
+	}
+
+	var pathValue string
+	for _, item := range envList {
+		if strings.HasPrefix(item, "PATH=") {
+			pathValue = strings.TrimPrefix(item, "PATH=")
+			break
+		}
+	}
+	if pathValue == "" {
+		t.Fatalf("PATH 不应为空")
+	}
+	if strings.Contains(pathValue, "/callit-bin") {
+		t.Fatalf("PATH 中不应暴露 /callit-bin，got=%q", pathValue)
+	}
+}
+
 func TestRuntimeLibNameByRuntimeForPythonUsesFixedVersionDir(t *testing.T) {
-	if got := runtimeLibNameByRuntime("python"); got != filepath.Join("python", "venv") {
+	if got := runtimeLibNameByRuntime("python"); got != "python" {
 		t.Fatalf("Python runtime 目录不正确，got=%q", got)
 	}
 }
@@ -218,5 +278,104 @@ func TestSplitBridgeOutputExtractsResultBlockBeforeTrailingNsJailLogs(t *testing
 	}
 	if resultOutput != `{"status":200,"body":"ok"}` {
 		t.Fatalf("结果输出不正确，got=%q", resultOutput)
+	}
+}
+
+func TestNodeWorkerEntrypointKeepsAsyncLogsBeforeResultBlock(t *testing.T) {
+	workerDir := t.TempDir()
+	currentDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("获取当前目录失败: %v", err)
+	}
+	mainJS := strings.TrimSpace(`
+async function handler() {
+  await Promise.resolve();
+  console.log({ rows: [], rows_affected: 0, last_insert_id: 0 });
+  return { status: 200, body: { ok: true } };
+}
+
+module.exports = { handler };
+`)
+	if err := os.WriteFile(filepath.Join(workerDir, "main.js"), []byte(mainJS), 0o644); err != nil {
+		t.Fatalf("写入 main.js 失败: %v", err)
+	}
+
+	cmd := exec.Command("node", filepath.Join(currentDir, "worker_entrypoints", "node.js"))
+	cmd.Dir = workerDir
+	cmd.Env = append(os.Environ(), "NODE_PATH="+filepath.Join(currentDir, "..", "..", "data", ".lib", "node", "node_modules"))
+	cmd.Stdin = strings.NewReader(`{"request":{"method":"GET","uri":"/","url":"http://127.0.0.1/"}}`)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("执行 node worker entrypoint 失败: %v, output=%s", err, string(output))
+	}
+
+	logOutput, resultOutput, err := splitBridgeOutput(string(output))
+	if err != nil {
+		t.Fatalf("splitBridgeOutput 失败: %v, output=%s", err, string(output))
+	}
+
+	wantRawSequence := strings.Join([]string{
+		"===============",
+		"{ rows: [], rows_affected: 0, last_insert_id: 0 }",
+		"",
+		"**=====^=====**",
+		`{"status":200,"body":{"ok":true}}`,
+		"**=====^=====**",
+		"===============",
+	}, "\n")
+	if !strings.Contains(strings.TrimSpace(string(output)), wantRawSequence) {
+		t.Fatalf("原始输出顺序不正确，got=%q want包含=%q", strings.TrimSpace(string(output)), wantRawSequence)
+	}
+
+	wantLogOutput := strings.Join([]string{
+		"===============",
+		"{ rows: [], rows_affected: 0, last_insert_id: 0 }",
+		"===============",
+	}, "\n")
+	if strings.TrimSpace(logOutput) != wantLogOutput {
+		t.Fatalf("异步日志位置不正确，got=%q want=%q", strings.TrimSpace(logOutput), wantLogOutput)
+	}
+	if resultOutput != `{"status":200,"body":{"ok":true}}` {
+		t.Fatalf("结果输出不正确，got=%q", resultOutput)
+	}
+}
+
+func TestNodeWorkerEntrypointKeepsErrorInsideLogSeparator(t *testing.T) {
+	workerDir := t.TempDir()
+	currentDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("获取当前目录失败: %v", err)
+	}
+	mainJS := strings.TrimSpace(`
+async function handler() {
+  await Promise.resolve();
+  throw new Error("boom");
+}
+
+module.exports = { handler };
+`)
+	if err := os.WriteFile(filepath.Join(workerDir, "main.js"), []byte(mainJS), 0o644); err != nil {
+		t.Fatalf("写入 main.js 失败: %v", err)
+	}
+
+	cmd := exec.Command("node", filepath.Join(currentDir, "worker_entrypoints", "node.js"))
+	cmd.Dir = workerDir
+	cmd.Env = append(os.Environ(), "NODE_PATH="+filepath.Join(currentDir, "..", "..", "data", ".lib", "node", "node_modules"))
+	cmd.Stdin = strings.NewReader(`{"request":{"method":"GET","uri":"/","url":"http://127.0.0.1/"}}`)
+
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("执行 node worker entrypoint 应失败，output=%s", string(output))
+	}
+
+	rawOutput := strings.TrimSpace(string(output))
+	startIdx := strings.Index(rawOutput, "===============")
+	endIdx := strings.LastIndex(rawOutput, "===============")
+	if startIdx < 0 || endIdx <= startIdx {
+		t.Fatalf("错误输出缺少外层日志分隔符，output=%q", rawOutput)
+	}
+	if !strings.Contains(rawOutput[startIdx:endIdx], "Error: boom") {
+		t.Fatalf("错误日志未落在日志分隔符内，output=%q", rawOutput)
 	}
 }

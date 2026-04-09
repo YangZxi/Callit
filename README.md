@@ -32,6 +32,9 @@ A lightweight self-hosted personal serverless platform based on Docker.
 - 支持文件上传、文件返回、HTML 页面返回
 - 支持全局依赖管理
 - 内置 Admin 后台管理 Worker、配置和依赖
+- 支持数据持久化相关操作，提供 KV，DB 相关 SDK 接口
+  - 通过 db 模块提供 SQLite3 数据库操作能力
+  - 通过 kv 模块提供简单的 KV(Redis) 存储能力
 
 tips:
 > 如果你需要一个更成熟、功能更丰富且适用于企业级的 Serverless 平台，应该考虑 OpenFaas、Fission、AWS Lambda、Cloudflare Workers 等解决方案。`Callit` 更适合个人开发者、轻量级使用场景。
@@ -59,6 +62,13 @@ services:
       - apparmor=unconfined
       - systempaths=unconfined
     restart: unless-stopped
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: callit-redis
+    restart: unless-stopped
 ```
 
 启动：
@@ -70,7 +80,7 @@ docker compose up -d
 启动后可访问：
 
 - Router: `http://127.0.0.1:3100`
-- Admin: `http://127.0.0.1:3100/admin`
+- Admin: `http://127.0.0.1:3100/admin/`
 
 ### Skill 与 MCP 服务
 如果你希望在 AI agent 中通过自然语言的方式来管理 Callit Worker，可以安装 `callit-skill`，并确保配置了 `callit-mcp` MCP 服务。  
@@ -132,6 +142,7 @@ function handler(ctx) {
 - 主文件中必须定义 `handler(ctx)`，通过 ctx 对象获取请求信息、上下文等信息
 - 通过返回 JSON 结构化数据来控制 HTTP 响应的状态码、响应体和响应头
 - 具体文档与样例请参考 [Worker 文档](./docs/worker_introduction.md)
+- Worker 的内部 KV 能力通过本机 `magic-api` 服务提供，默认监听 `127.0.0.1:31001`，仅供 Worker 运行时调用
 
 
 ## 技术栈
