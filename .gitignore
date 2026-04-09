@@ -1,5 +1,4 @@
 # 构建产物
-callit
 *.out
 
 # 运行时数据
@@ -11,6 +10,10 @@ dist/
 docs/plans/
 .cache/
 .codex
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 
 # Go
 coverage.out

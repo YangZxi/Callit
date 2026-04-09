@@ -9,3 +9,9 @@
 - 包含 Worker 目录结构、`main.xx` 入口要求、`handler(ctx)` 约定
 - 包含 `stdin` / `stdout` / `stderr` 说明
 - 包含上传文件、下载文件、返回 HTML 页面的示例
+
+# Worker SDK
+[Worker SDK](./worker_sdk.md)
+- 包含 `kv` 与 `db` 的调用方式
+- 包含 `namespace` 规则、builder 规则、返回值说明
+- 包含 Node / Python 两个 runtime 的示例

@@ -80,10 +80,12 @@ func Run(parent context.Context, worker model.Worker, workerDir string, runtimeD
 	bridgeStdout, bridgeStderr, runErr := runWithNsJailBridge(sandboxCommandInput{
 		Parent:               parent,
 		Worker:               worker,
+		RequestID:            input.Event.RequestID,
 		WorkerDir:            workerDir,
 		RuntimeDir:           runtimeDir,
 		WorkerRunningTempDir: workerRunningTempDir,
 		EnableCgroupV2:       cfg.EnableCgroupV2,
+		ServerPort:           cfg.MagicServerPort,
 		Payload:              payload,
 	})
 	result.Stderr = bridgeStderr
@@ -155,10 +157,12 @@ func parseScriptOutput(raw []byte) (model.WorkerOutput, error) {
 type sandboxCommandInput struct {
 	Parent               context.Context
 	Worker               model.Worker
+	RequestID            string
 	WorkerDir            string
 	RuntimeDir           string
 	WorkerRunningTempDir string
 	EnableCgroupV2       bool
+	ServerPort           int
 	Payload              []byte
 }
 
@@ -282,7 +286,7 @@ func sandboxCgroupMemMaxBytesByRuntime(runtime string) int64 {
 func runtimeLibNameByRuntime(runtime string) string {
 	switch runtime {
 	case "python":
-		return filepath.Join("python", "venv")
+		return "python"
 	case "node":
 		return "node"
 	default:
@@ -319,6 +323,7 @@ func runtimeSupportMountPaths() []string {
 
 func buildSandboxCommand(input sandboxCommandInput) (*exec.Cmd, func(), error) {
 	cleanup := func() {}
+	var err error
 	timeLimit := input.Worker.TimeoutMS / 1000
 	if input.Worker.TimeoutMS%1000 != 0 {
 		timeLimit++
@@ -368,10 +373,13 @@ func buildSandboxCommand(input sandboxCommandInput) (*exec.Cmd, func(), error) {
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("解析 runtime 依赖目录失败: %w", err)
 	}
-
 	cmd := exec.CommandContext(input.Parent, nsjailPath, args...)
 	cmd.Dir = input.WorkerDir
-	cmd.Env = buildSandboxEnv(runtimeDirAbs, input.Worker.Runtime, spec.CommandPath)
+	cmd.Env = buildSandboxEnv(runtimeDirAbs, input.Worker.Runtime, spec.CommandPath, workerEnvConfig{
+		CallitMagicApiBaseURL: fmt.Sprintf("http://127.0.0.1:%d", input.ServerPort),
+		WorkerID:              input.Worker.ID,
+		RequestID:             input.RequestID,
+	})
 	return cmd, cleanup, nil
 }
 
@@ -465,7 +473,13 @@ func buildScriptExecuteError(stderr string, runErr error) error {
 	return fmt.Errorf("脚本执行失败: %w", runErr)
 }
 
-func buildSandboxEnv(runtimeDir string, runtime string, executablePath string) []string {
+type workerEnvConfig struct {
+	CallitMagicApiBaseURL string
+	WorkerID              string
+	RequestID             string
+}
+
+func buildSandboxEnv(runtimeDir string, runtime string, executablePath string, workerEnv workerEnvConfig) []string {
 	envList := []string{
 		"HOME=/tmp",
 		"TMPDIR=/tmp",
@@ -476,6 +490,13 @@ func buildSandboxEnv(runtimeDir string, runtime string, executablePath string) [
 	pathEntries = append(pathEntries, filepath.Dir(executablePath))
 	pathEntries = append(pathEntries, "/usr/local/bin", "/usr/bin", "/bin")
 	envList = append(envList, "PATH="+buildPathEntries(pathEntries))
+	if workerEnv.CallitMagicApiBaseURL != "" {
+		envList = append(envList,
+			"CALLIT_MAGIC_API_BASE_URL="+workerEnv.CallitMagicApiBaseURL,
+			"CALLIT_WORKER_ID="+workerEnv.WorkerID,
+			"CALLIT_REQUEST_ID="+workerEnv.RequestID,
+		)
+	}
 
 	switch runtime {
 	case "node":
@@ -503,11 +524,15 @@ func nodeRuntimeModulePaths(runtimeDir string, executablePath string) []string {
 
 func pythonRuntimeModulePaths(runtimeDir string) []string {
 	runtimeRoot := filepath.Join(runtimeDir, runtimeLibNameByRuntime("python"))
-	sitePackages := detectPythonSitePackages(runtimeRoot)
+	pythonEnvDir := filepath.Join(runtimeRoot, "venv")
+	sitePackages := detectPythonSitePackages(pythonEnvDir)
 	if sitePackages == "" {
-		return nil
+		return []string{
+			mapRuntimePathToSandbox(runtimeRoot, runtimeRoot),
+		}
 	}
 	return []string{
+		mapRuntimePathToSandbox(runtimeRoot, runtimeRoot),
 		mapRuntimePathToSandbox(sitePackages, runtimeRoot),
 	}
 }

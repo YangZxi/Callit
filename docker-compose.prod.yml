@@ -23,3 +23,10 @@ services:
       - apparmor=unconfined
       - systempaths=unconfined
     restart: unless-stopped
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: callit-redis
+    restart: unless-stopped

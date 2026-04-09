@@ -30,8 +30,8 @@ internal/executor           # http、cron 触发调用 worker 时的执行器
 internal/common             # 公共通用模块，JSON/form/multipart 解析
 internal/db                 # 数据库层，使用 ORM 提供操作数据的接口
 internal/model              # 数据库实体与 Go 实体
+resources/worker_sdk        # Worker SDK 源文件
 pages/                      # 前端源代码
-migrations/001_init.sql     # 建表 SQL
 .github/workflows           # CI（镜像构建推送）
 ```
 
@@ -137,6 +137,8 @@ docker compose up --build
 4. 新增路径、包名、模型名时，必须全局搜索引用并一次性更新。
 5. 禁止使用无意义命名和难以理解的随意缩写；允许使用行业内约定俗成、语义明确的常见缩写（如 `cfg`、`reg`、`dao`），但所有变量名、函数名、方法名都必须名如其意，看到名称就能理解其职责和用途。
 6. 避免做不需要的兜底开发，一般情况下，你只需要考虑当下就行，不必考虑到未来的各种参数值不合法问题。在不明确时，询问我是否需要进行兜底。
+7. 修改 Worker SDK 时，必须同步检查对应的 `magic-api` 接口契约、参数结构和返回结构是否仍然兼容，确保 SDK 封装与服务端行为一致。
+8. 修改 Worker SDK 的逻辑、命名、返回值或修复 BUG 时，必须同时检查 Node 与 Python 两个 runtime 的实现和对外行为，避免出现跨 runtime 不一致。
 
 ## 8. 变更流程（代理执行）
 
@@ -160,6 +162,8 @@ docker compose up --build
 - CI 文件：`.github/workflows/build_and_push.yaml`
 - 构建与推送在 GitHub Actions 云端执行
 - 默认镜像目标：`ghcr.io/<owner>/callit`
+- Python 运行时版本固定为 `3.10`。这是项目明确约束，不允许随意升级、降级或改为跟随基础镜像默认版本；如需调整，必须明确评估 `venv` 兼容性、依赖恢复路径和现有运行环境迁移方案。
+- Node.js 在镜像中采用手动安装方式，而不是直接通过 `apt` 安装。这样做是为了避免 `nsjail` 沙箱内执行 `node` 时出现失败；除非已经验证新的安装方式不会影响沙箱执行，否则不要改回 `apt` 安装。
 
 ## 11. 完成定义（DoD）
 

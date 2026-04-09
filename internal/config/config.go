@@ -32,6 +32,7 @@ type Config struct {
 	LogLevel string
 
 	ServerPort           int
+	MagicServerPort      int
 	AdminPrefix          string
 	AdminToken           string
 	DataDir              string
@@ -44,6 +45,9 @@ type Config struct {
 
 	// Runtime
 	EnableCgroupV2 bool
+	RedisAddr      string
+	RedisPassword  string
+	RedisDB        int
 
 	AppConfig AppConfig
 }
@@ -87,6 +91,7 @@ func AppConfigKeys() []string {
 func Load() Config {
 	cfg := Config{
 		ServerPort:           getInt("SERVER_PORT", 3100),
+		MagicServerPort:      31001,
 		AdminToken:           getEnv("ADMIN_TOKEN", ""),
 		AdminPrefix:          getEnv("ADMIN_PREFIX", "admin"),
 		DataDir:              getEnv("DATA_DIR", "./data"),
@@ -100,6 +105,9 @@ func Load() Config {
 
 		LogLevel:       getEnv("LOG_LEVEL", "info"),
 		EnableCgroupV2: getBool("ENABLE_CGROUP_V2", false),
+		RedisAddr:      getEnv("REDIS_ADDR", "redis:6379"),
+		RedisPassword:  getEnv("REDIS_PASSWORD", ""),
+		RedisDB:        getInt("REDIS_DB", 0),
 	}
 	nomralizeConfig(&cfg)
 	return cfg

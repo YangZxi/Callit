@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const callit = require("callit");
 
 const RES_SEPARATOR = "\n**=====^=====**\n";
 const LOG_SEPARATOR = "\n===============\n";
@@ -29,6 +30,7 @@ Promise.resolve(loadHandler()(ctx)).then((out) => {
 	process.stdout.write(RES_SEPARATOR);
 }).catch((err) => {
 	console.error(err && err.stack ? err.stack : String(err));
-	process.exit(1);
+	process.exitCode = 1;
+}).finally(() => {
+	process.stdout.write(LOG_SEPARATOR.trim() + "\n\n");
 });
-process.stdout.write(LOG_SEPARATOR.trim() + "\n\n");

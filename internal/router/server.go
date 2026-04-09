@@ -16,6 +16,7 @@ import (
 
 	"callit/internal/common"
 	"callit/internal/common/requestparse"
+	"callit/internal/config"
 	"callit/internal/db"
 	"callit/internal/executor"
 	"callit/internal/model"
@@ -32,8 +33,13 @@ type Server struct {
 }
 
 // NewEngine 创建 Router Gin 引擎。
-func NewEngine(store *db.Store, reg *Registry, workerDir string, invoker *executor.Service) *gin.Engine {
-	s := &Server{store: store, reg: reg, workerDir: workerDir, invoker: invoker}
+func NewEngine(store *db.Store, reg *Registry, cfg config.Config, invoker *executor.Service) *gin.Engine {
+	s := &Server{
+		store:     store,
+		reg:       reg,
+		workerDir: cfg.WorkersDir,
+		invoker:   invoker,
+	}
 	e := gin.New()
 	e.Use(gin.Recovery(), common.RequestIDMiddleware())
 	e.GET("/", func(c *gin.Context) {

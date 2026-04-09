@@ -33,6 +33,14 @@ services:
       - systempaths=unconfined
     # privileged: true
     command: ["go", "run", "./cmd"]
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: callit-dev-redis
+    ports:
+      - "6379:6379"
 
 volumes:
   go-mod-cache:

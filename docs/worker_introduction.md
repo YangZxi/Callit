@@ -3,7 +3,7 @@
 
 在 Worker 中，你可以使用 Python 或 Node.js 编写自定义代码来处理 HTTP 请求，实现动态响应、数据处理、文件操作等功能。 
 
-出官方库之外，你还可以安装第三方依赖来扩展 Worker 的能力，例如使用 `requests` 库在 Python Worker 中发起 HTTP 请求，或在 Node Worker 中使用 `lodash` 进行数据处理。具体参考 [依赖库来源](#依赖库来源) 一节。
+除官方库之外，你还可以安装第三方依赖来扩展 Worker 的能力，例如使用 `requests` 库在 Python Worker 中发起 HTTP 请求，或在 Node Worker 中使用 `lodash` 进行数据处理。具体参考 [依赖库来源](#依赖库来源) 一节。
 
 ## 工作原理
 
@@ -22,6 +22,8 @@
 7. 当接收到文件上传时，系统会把文件暂存到服务器的运行时数据目录，并把文件信息（如路径、大小、类型）传入 `request.body[filename]` 中。沙箱内对应的可见路径为 `/tmp/upload`。
 
 Worker 中的脚本仅允许读写 `/tmp` 文件夹，其他文件皆为**只读**。
+
+另外，平台内置了 `kv` 能力，你可以使用它来存储、读取持久化的字符串数据。  
 
 ## 入口文件要求
 
@@ -50,6 +52,22 @@ def handler(ctx):
 
 如果未定义可调用的 `handler(ctx)`，运行时会报错：
 
+Python Worker 还可以直接使用平台注入的 `kv`：
+
+```python
+import json
+from callit import kv
+
+def handler(ctx):
+    kv_client = kv.new_client("group1")
+    kv_client.set("session", json.dumps({"id": "1234"}), 300)
+    value = kv_client.get("session")
+    return {
+        "status": 200,
+        "body": value
+    }
+```
+
 ### Node
 
 `main.js` 必须通过 CommonJS 导出 `handler`：
@@ -71,6 +89,36 @@ exports.handler = function (ctx) {
 ```
 
 如果没有导出可调用的 `handler`，运行时会报错：
+
+Node Worker 也可以直接使用平台注入的 `kv`：
+
+```javascript
+const { kv } = require("callit");
+
+async function handler(ctx) {
+  const kvClient = kv.newClient("group1");
+  await kvClient.set("session", JSON.stringify({ id: "1234" }), 300);
+  const value = await kvClient.get("session");
+
+  return {
+    status: 200,
+    body: value
+  };
+}
+
+module.exports = handler;
+```
+
+## SDK 能力
+
+Worker 运行时内置了 `kv` 和 `db` 两类 SDK 能力。
+
+- `kv` 用于字符串键值存储
+- `db` 用于访问 Worker 可用的共享数据库
+
+详细的调用方式、参数规则、返回值结构和代码示例，请参考：
+
+- [Worker SDK 文档](./worker_sdk.md)
 
 ## 模板示例
 
@@ -500,24 +548,27 @@ def handler(ctx):
 - 返回 HTML 可以通过将内容放入`body` 字段，或通过 `file` 字段返回 Worker 目录中的 HTML 文件
 - 设置 `Content-Type` 为 `text/html` 以确保浏览器正确解析
 
-1. 使用 HTML 代码直接返回：
+1. 使用静态文件返回 HTML 页面（推荐）
+如果希望直接返回 Worker 目录中的静态 HTML 文件，也可以这样写：
+
+```python
+def handler(ctx):
+    return {
+        "status": 200,
+        "file": "index.html",
+        "headers": {
+            "Content-Type": "text/html; charset=utf-8"
+        },
+        "body": None
+    }
+```
+
+1. 使用 HTML 代码直接返回（适合小页面）
 示例 `main.py`：
 
 ```python
-def escape_html(text):
-    return (
-        str(text)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
-
-
 def handler(ctx):
-    params = ctx.get("request", {}).get("params", {}) or {}
-    name = escape_html(params.get("name", "Callit"))
-
+    name = "Callit"
     html = f"""
 <body>
   <h1>Hello, {name}</h1>
@@ -531,21 +582,6 @@ def handler(ctx):
             "Content-Type": "text/html; charset=utf-8"
         },
         "body": html
-}
-```
-
-2. 使用静态文件返回 HTML 页面
-如果希望直接返回 Worker 目录中的静态 HTML 文件，也可以这样写：
-
-```python
-def handler(ctx):
-    return {
-        "status": 200,
-        "file": "index.html",
-        "headers": {
-            "Content-Type": "text/html; charset=utf-8"
-        },
-        "body": None
     }
 ```
 
