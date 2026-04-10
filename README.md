@@ -96,6 +96,7 @@ Fetch and follow instructions from https://raw.githubusercontent.com/YangZxi/Cal
 项目内置了一个简单的 MCP server，你需要通过登录到 Admin 后台来启用它，并设置一个`MCP_TOKEN`，AI agent 才能通过 MCP 来管理 Worker。
 - MCP Server Name: `callit-mcp`
 - MCP Server Url: `http://<host>/mcp`，其中 `<host>` 是 AI agent 能访问到的地址，通常是部署 Callit 的服务器 IP 或域名
+- 鉴权方式优先使用请求头 `Authorization: Bearer <MCP_TOKEN>`；如果客户端不支持自定义请求头，也可以使用查询参数：`http://<host>/mcp?token=<MCP_TOKEN>`。当请求头和查询参数同时存在时，请求头优先
 
 ## Worker 模板
 

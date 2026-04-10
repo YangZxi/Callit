@@ -107,7 +107,7 @@ func (h *Handler) authorize(next http.Handler) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		if !h.isAuthorized(r.Header.Get("Authorization")) {
+		if !h.isAuthorized(r) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -119,13 +119,22 @@ func (h *Handler) authorize(next http.Handler) http.Handler {
 	})
 }
 
-func (h *Handler) isAuthorized(authorization string) bool {
+func (h *Handler) isAuthorized(r *http.Request) bool {
 	token := strings.TrimSpace(h.cfg.AppConfig.MCP_Token)
 	if token == "" {
 		return false
 	}
+
+	authorization := strings.TrimSpace(r.Header.Get("Authorization"))
+	if authorization != "" {
+		return isBearerTokenMatch(authorization, token)
+	}
+
+	return strings.TrimSpace(r.URL.Query().Get("token")) == token
+}
+
+func isBearerTokenMatch(authorization string, token string) bool {
 	const prefix = "Bearer "
-	authorization = strings.TrimSpace(authorization)
 	if !strings.HasPrefix(authorization, prefix) {
 		return false
 	}
