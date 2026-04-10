@@ -193,3 +193,39 @@ docker compose -f docker-compose.dev.yml up --build
 - 生成并返回文件
 - 返回 HTML 页面
 - 使用第三方依赖扩展 Worker 能力
+
+
+## 常见问题
+### docker compose 启动时提示'Error response from daemon: invalid --security-opt 2: "systempaths=unconfined"'
+大部分原因都是 Docker Compose 版本太低了，比如使用 apt 安装的 Docker  
+一下提供两个解决方案：
+1. 升级 Docker 和 Docker Compose 到最新版本  
+使用官方源重新安装最新的 Docker（新版 Docker 中包含 compose 命令），https://docs.docker.com/engine/install/debian/  
+跟随官方指导重新安装 Docker  
+2. 开放更高权限（不推荐，存在安全风险）
+注释掉 `systempaths=unconfined`，同时添加 `privileged: true` 来获得相同的权限，但这会带来更大的安全风险，请谨慎使用。
+```yaml
+services:
+  callit:
+    image: yangzxi/callit:latest
+    ...
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+      # - systempaths=unconfined
+```
+
+## LICENSE
+
+本项目采用 [GNU General Public License v3.0](./LICENSE) 许可证。
+版权署名主体为 `YangZxi`；项目名 `Callit` 用于标识项目本身，不替代版权主体。
+
+- 允许商用、修改和分发
+- 分发原版或修改版时，必须保留原作者版权声明与许可证文本
+- 分发二进制、镜像或其他非源码形式时，必须同时提供对应源码或有效的源码获取方式
+- 不允许将分发版本改为闭源私有发布
+
+如果只是自行部署提供在线服务、未向他人分发程序副本，GPL-3.0 一般不强制公开源码。
