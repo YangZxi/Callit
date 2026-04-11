@@ -3,7 +3,7 @@ import { Link as HeroLink } from "@heroui/react";
 import clsx from "clsx";
 
 // import Login from "./login";
-import { GithubIcon, Logo } from "@/components/icons";
+import { GithubIcon } from "@/components/icons";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { siteConfig } from "@/config/site";
 
@@ -24,7 +24,11 @@ function AppNavbar() {
       <div className="px-0 gap-6 h-12 flex items-center justify-between">
         <div className="basis-1/5 sm:basis-full flex items-center justify-start gap-3 max-w-fit mr-2">
           <RouterLink className="flex justify-start items-center gap-1 no-underline" to={`${window.__BASE_PREFIX__}/`}>
-            <Logo />
+            <img 
+              src={`${window.__BASE_PREFIX__}/static/logo.png`}
+              alt="Logo"
+              className="h-6 w-6 rounded-sm object-cover"
+            />
             <p className="font-bold text-inherit hidden sm:block">{siteConfig.name}</p>
           </RouterLink>
         </div>
