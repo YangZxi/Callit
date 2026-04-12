@@ -7,6 +7,7 @@ type CreateWorkerRequest struct {
 	Runtime     string `json:"runtime"`
 	Route       string `json:"route"`
 	TimeoutMS   int    `json:"timeout_ms"`
+	Env         string `json:"env"`
 	Enabled     *bool  `json:"enabled"`
 }
 
@@ -16,6 +17,7 @@ type UpdateWorkerRequest struct {
 	Description string `json:"description"`
 	Route       string `json:"route"`
 	TimeoutMS   int    `json:"timeout_ms"`
+	Env         string `json:"env"`
 	Enabled     *bool  `json:"enabled"`
 }
 
