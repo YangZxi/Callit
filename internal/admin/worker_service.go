@@ -45,6 +45,7 @@ type CreateWorkerInput struct {
 	Runtime     string
 	Route       string
 	TimeoutMS   int
+	Env         string
 	Enabled     *bool
 }
 
@@ -54,6 +55,7 @@ type UpdateWorkerInput struct {
 	Description string
 	Route       string
 	TimeoutMS   int
+	Env         string
 	Enabled     *bool
 }
 
@@ -106,6 +108,7 @@ func (s *WorkerService) CreateWorker(ctx context.Context, input CreateWorkerInpu
 		Runtime:     strings.TrimSpace(input.Runtime),
 		Route:       strings.TrimSpace(input.Route),
 		TimeoutMS:   timeoutMS,
+		Env:         normalizeWorkerEnv(input.Env),
 		Enabled:     enabled,
 	}
 	if err := worker.Validate(); err != nil {
@@ -164,6 +167,7 @@ func (s *WorkerService) UpdateWorker(ctx context.Context, input UpdateWorkerInpu
 		Runtime:     origin.Runtime,
 		Route:       strings.TrimSpace(input.Route),
 		TimeoutMS:   timeoutMS,
+		Env:         normalizeWorkerEnv(input.Env),
 		Enabled:     enabled,
 	}
 	if err := updating.Validate(); err != nil {
@@ -184,6 +188,21 @@ func (s *WorkerService) UpdateWorker(ctx context.Context, input UpdateWorkerInpu
 		return model.Worker{}, err
 	}
 	return updated, nil
+}
+
+func normalizeWorkerEnv(envText string) string {
+	items := strings.FieldsFunc(envText, func(r rune) bool {
+		return r == ';' || r == '\n'
+	})
+	normalized := make([]string, 0, len(items))
+	for _, item := range items {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		normalized = append(normalized, trimmed)
+	}
+	return strings.Join(normalized, ";")
 }
 
 func (s *WorkerService) ListWorkerFiles(ctx context.Context, id string) ([]string, error) {
