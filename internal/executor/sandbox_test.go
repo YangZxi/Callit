@@ -194,6 +194,40 @@ func TestBuildSandboxEnvIncludesKVEnv(t *testing.T) {
 	}
 }
 
+func TestBuildSandboxEnvIncludesWorkerCustomEnv(t *testing.T) {
+	envList := buildSandboxEnv("/data/.lib", "node", "/usr/bin/node", workerEnvConfig{
+		CustomKV: map[string]string{
+			"API_KEY": "test-key",
+			"REGION":  "us",
+		},
+	})
+
+	assertContains := func(want string) {
+		t.Helper()
+		if !slices.Contains(envList, want) {
+			t.Fatalf("环境变量中缺少 %q，env=%v", want, envList)
+		}
+	}
+	assertContains("API_KEY=test-key")
+	assertContains("REGION=us")
+}
+
+func TestParseWorkerEnvPairs(t *testing.T) {
+	parsed := parseWorkerEnvPairs(" API_KEY = test ;\nREGION=us \nINVALID\n=empty;A=B=C")
+	if len(parsed) != 3 {
+		t.Fatalf("解析结果数量不正确: %#v", parsed)
+	}
+	if parsed["API_KEY"] != "test" {
+		t.Fatalf("API_KEY 解析失败: %#v", parsed)
+	}
+	if parsed["REGION"] != "us" {
+		t.Fatalf("REGION 解析失败: %#v", parsed)
+	}
+	if parsed["A"] != "B=C" {
+		t.Fatalf("A 解析失败: %#v", parsed)
+	}
+}
+
 func TestRuntimeLibNameByRuntimeForPythonUsesFixedVersionDir(t *testing.T) {
 	if got := runtimeLibNameByRuntime("python"); got != "python" {
 		t.Fatalf("Python runtime 目录不正确，got=%q", got)

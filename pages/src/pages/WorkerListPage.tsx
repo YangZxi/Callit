@@ -1,5 +1,5 @@
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from "react";
-import { Chip, SearchField, toast } from "@heroui/react";
+import { Chip, Label, SearchField, TextArea, toast } from "@heroui/react";
 import { Button } from "@heroui/react";
 import { useNavigate } from "react-router-dom";
 
@@ -15,6 +15,7 @@ type WorkerItem = {
   runtime: "python" | "node";
   route: string;
   timeout_ms: number;
+  env: string;
   enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -26,6 +27,7 @@ type CreateWorkerForm = {
   runtime: "python" | "node";
   route: string;
   timeoutMS: string;
+  env: string;
   enabled: boolean;
 };
 
@@ -37,6 +39,7 @@ const initialForm: CreateWorkerForm = {
   runtime: "python",
   route: "",
   timeoutMS: "5000",
+  env: "",
   enabled: true,
 };
 
@@ -67,6 +70,14 @@ export default function WorkerListPage() {
   const [keyword, setKeyword] = useState("");
 
   const empty = useMemo(() => !listLoading && workers.length === 0, [listLoading, workers.length]);
+
+  const normalizeEnvInput = (value: string): string => {
+    return value
+      .split(/[\n;]/)
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+      .join(";");
+  };
 
   const loadWorkers = async (searchKeyword: string = keyword) => {
     setListLoading(true);
@@ -117,6 +128,7 @@ export default function WorkerListPage() {
           runtime: form.runtime,
           route: form.route.trim(),
           timeout_ms: timeout,
+          env: normalizeEnvInput(form.env),
           enabled: form.enabled,
         });
       } else {
@@ -126,6 +138,7 @@ export default function WorkerListPage() {
           description: form.description.trim(),
           route: form.route.trim(),
           timeout_ms: timeout,
+          env: normalizeEnvInput(form.env),
           enabled: form.enabled,
         });
       }
@@ -155,6 +168,7 @@ export default function WorkerListPage() {
       runtime: item.runtime,
       route: item.route,
       timeoutMS: String(item.timeout_ms),
+      env: item.env || "",
       enabled: item.enabled,
     });
     setIsOpen(true);
@@ -329,6 +343,7 @@ export default function WorkerListPage() {
         classNames={{
           body: "px-[4px]"
         }}
+        size="lg"
         onOpenChange={(open) => setIsOpen(open)}
         onSubmit={() => {
           void submitForm();
@@ -380,6 +395,17 @@ export default function WorkerListPage() {
             value={form.timeoutMS}
             onValueChange={(value) => setForm((prev) => ({ ...prev, timeoutMS: value }))}
           />
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="worker-env">环境变量</Label>
+            <TextArea
+              id="worker-env"
+              className="w-full"
+              rows={3}
+              placeholder="KEY=value;KEY2=value2;..."
+              value={form.env}
+              onChange={(event) => setForm((prev) => ({ ...prev, env: event.target.value }))}
+            />
+          </div>
           <Switch
             label="启用 Worker"
             value={form.enabled}
