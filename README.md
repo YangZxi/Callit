@@ -229,3 +229,8 @@ services:
 - 不允许将分发版本改为闭源私有发布
 
 如果只是自行部署提供在线服务、未向他人分发程序副本，GPL-3.0 一般不强制公开源码。
+
+
+---
+
+Finally，Thanks to everyone on LinuxDo for their support! Welcome to join https://linux.do/ for all kinds of technical exchanges, cutting-edge AI information, and AI experience sharing, all on Linuxdo!
