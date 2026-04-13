@@ -222,7 +222,6 @@ services:
 ## LICENSE
 
 本项目采用 [GNU General Public License v3.0](./LICENSE) 许可证。
-版权署名主体为 `YangZxi`；项目名 `Callit` 用于标识项目本身，不替代版权主体。
 
 - 允许商用、修改和分发
 - 分发原版或修改版时，必须保留原作者版权声明与许可证文本
