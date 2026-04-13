@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -379,6 +380,7 @@ func buildSandboxCommand(input sandboxCommandInput) (*exec.Cmd, func(), error) {
 		CallitMagicApiBaseURL: fmt.Sprintf("http://127.0.0.1:%d", input.ServerPort),
 		WorkerID:              input.Worker.ID,
 		RequestID:             input.RequestID,
+		CustomKV:              parseWorkerEnvPairs(input.Worker.Env),
 	})
 	return cmd, cleanup, nil
 }
@@ -477,6 +479,7 @@ type workerEnvConfig struct {
 	CallitMagicApiBaseURL string
 	WorkerID              string
 	RequestID             string
+	CustomKV              map[string]string
 }
 
 func buildSandboxEnv(runtimeDir string, runtime string, executablePath string, workerEnv workerEnvConfig) []string {
@@ -497,6 +500,16 @@ func buildSandboxEnv(runtimeDir string, runtime string, executablePath string, w
 			"CALLIT_REQUEST_ID="+workerEnv.RequestID,
 		)
 	}
+	if len(workerEnv.CustomKV) > 0 {
+		keys := make([]string, 0, len(workerEnv.CustomKV))
+		for key := range workerEnv.CustomKV {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			envList = append(envList, key+"="+workerEnv.CustomKV[key])
+		}
+	}
 
 	switch runtime {
 	case "node":
@@ -505,6 +518,29 @@ func buildSandboxEnv(runtimeDir string, runtime string, executablePath string, w
 		envList = appendRuntimeEnvPaths(envList, "PYTHONPATH", pythonRuntimeModulePaths(runtimeDir))
 	}
 	return envList
+}
+
+func parseWorkerEnvPairs(envText string) map[string]string {
+	entries := strings.FieldsFunc(envText, func(r rune) bool {
+		return r == ';' || r == '\n'
+	})
+	envMap := make(map[string]string, len(entries))
+	for _, item := range entries {
+		raw := strings.TrimSpace(item)
+		if raw == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(raw, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		envMap[key] = strings.TrimSpace(value)
+	}
+	return envMap
 }
 
 func appendRuntimeEnvPaths(env []string, key string, paths []string) []string {

@@ -29,6 +29,7 @@ func (dao *WorkerDAO) Create(ctx context.Context, worker model.Worker) (model.Wo
 		"runtime":     worker.Runtime,
 		"route":       worker.Route,
 		"timeout_ms":  worker.TimeoutMS,
+		"env":         worker.Env,
 		"enabled":     worker.Enabled,
 		"created_at":  worker.CreatedAt,
 		"updated_at":  worker.UpdatedAt,
@@ -86,6 +87,7 @@ func (dao *WorkerDAO) Update(ctx context.Context, worker model.Worker) (model.Wo
 			"runtime":     worker.Runtime,
 			"route":       worker.Route,
 			"timeout_ms":  worker.TimeoutMS,
+			"env":         worker.Env,
 			"enabled":     worker.Enabled,
 			"updated_at":  now,
 		})

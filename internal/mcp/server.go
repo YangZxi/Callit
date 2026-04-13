@@ -39,6 +39,7 @@ type createWorkerInput struct {
 	Runtime     string `json:"runtime"`
 	Route       string `json:"route"`
 	TimeoutMS   int    `json:"timeout_ms"`
+	Env         string `json:"env,omitempty"`
 	Enabled     *bool  `json:"enabled,omitempty"`
 }
 
@@ -48,6 +49,7 @@ type updateWorkerInput struct {
 	Description string `json:"description,omitempty"`
 	Route       string `json:"route"`
 	TimeoutMS   int    `json:"timeout_ms"`
+	Env         string `json:"env,omitempty"`
 	Enabled     *bool  `json:"enabled,omitempty"`
 }
 
@@ -155,7 +157,7 @@ func (h *Handler) newSDKServer() *sdkmcp.Server {
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "create_worker",
-		Description: "创建一个新的 Worker。参数必须提供 name、runtime、route、timeout_ms，可选 description、enabled；description 最多 200 字符。route 必须以 / 开头且通配符只支持结尾 /*，创建成功后会自动生成对应 runtime 的入口文件。",
+		Description: "创建一个新的 Worker。参数必须提供 name、runtime、route、timeout_ms，可选 description、env、enabled；env 为环境变量字符串，多个变量用分号分隔。description 最多 200 字符。route 必须以 / 开头且通配符只支持结尾 /*，创建成功后会自动生成对应 runtime 的入口文件。",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, input createWorkerInput) (*sdkmcp.CallToolResult, workerOutput, error) {
 		worker, err := h.service.CreateWorker(ctx, adminsvc.CreateWorkerInput{
 			Name:        input.Name,
@@ -163,6 +165,7 @@ func (h *Handler) newSDKServer() *sdkmcp.Server {
 			Runtime:     input.Runtime,
 			Route:       input.Route,
 			TimeoutMS:   input.TimeoutMS,
+			Env:         input.Env,
 			Enabled:     input.Enabled,
 		})
 		if err != nil {
@@ -173,7 +176,7 @@ func (h *Handler) newSDKServer() *sdkmcp.Server {
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "update_worker",
-		Description: "更新已有 Worker 的基础信息。参数必须提供 id、name、route、timeout_ms，可选 description、enabled；description 最多 200 字符；只能更新 name、description、route、timeout_ms、enabled",
+		Description: "更新已有 Worker 的基础信息。参数必须提供 id、name、route、timeout_ms，可选 description、env、enabled；env 为环境变量字符串，多个变量用分号分隔。description 最多 200 字符；只能更新 name、description、route、timeout_ms、env、enabled",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, input updateWorkerInput) (*sdkmcp.CallToolResult, workerOutput, error) {
 		worker, err := h.service.UpdateWorker(ctx, adminsvc.UpdateWorkerInput{
 			ID:          input.ID,
@@ -181,6 +184,7 @@ func (h *Handler) newSDKServer() *sdkmcp.Server {
 			Description: input.Description,
 			Route:       input.Route,
 			TimeoutMS:   input.TimeoutMS,
+			Env:         input.Env,
 			Enabled:     input.Enabled,
 		})
 		if err != nil {
@@ -191,7 +195,7 @@ func (h *Handler) newSDKServer() *sdkmcp.Server {
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "search_workers",
-		Description: "按 Worker 名称模糊搜索并返回匹配列表。参数 keyword 为可选关键词，结果包含 id、name、description、runtime、route、timeout_ms、enabled 等基础信息。",
+		Description: "按 Worker 名称模糊搜索并返回匹配列表。参数 keyword 为可选关键词，结果包含 id、name、description、runtime、route、timeout_ms、env、enabled 等基础信息。",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, input searchWorkersInput) (*sdkmcp.CallToolResult, searchWorkersOutput, error) {
 		workers, err := h.service.SearchWorkers(ctx, input.Keyword)
 		if err != nil {

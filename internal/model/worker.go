@@ -15,6 +15,7 @@ type Worker struct {
 	Runtime     string    `json:"runtime" gorm:"column:runtime;type:text;not null"`
 	Route       string    `json:"route" gorm:"column:route;type:text;not null;uniqueIndex"`
 	TimeoutMS   int       `json:"timeout_ms" gorm:"column:timeout_ms;not null;default:5000"`
+	Env         string    `json:"env" gorm:"column:env;type:text;not null;default:''"`
 	Enabled     bool      `json:"enabled" gorm:"column:enabled;not null;default:true"`
 	CreatedAt   time.Time `json:"created_at" gorm:"column:created_at;not null;autoCreateTime:false"`
 	UpdatedAt   time.Time `json:"updated_at" gorm:"column:updated_at;not null;autoUpdateTime:false"`

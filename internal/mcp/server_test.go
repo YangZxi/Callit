@@ -203,6 +203,7 @@ func TestCreateAndUpdateWorkerTools(t *testing.T) {
 				"runtime":    "python",
 				"route":      "/orders/*",
 				"timeout_ms": 4000,
+				"env":        "API_KEY=abc;TIMEOUT=30",
 				"enabled":    true,
 			},
 		},
@@ -224,6 +225,9 @@ func TestCreateAndUpdateWorkerTools(t *testing.T) {
 	if createBody.Result.StructuredContent.Worker.ID == "" {
 		t.Fatalf("create_worker 未返回有效 worker")
 	}
+	if createBody.Result.StructuredContent.Worker.Env != "API_KEY=abc;TIMEOUT=30" {
+		t.Fatalf("create_worker 返回 env 不正确: %#v", createBody.Result.StructuredContent.Worker)
+	}
 
 	mainFile := filepath.Join(dataDir, "workers", createBody.Result.StructuredContent.Worker.ID, "main.py")
 	if _, err := os.Stat(mainFile); err != nil {
@@ -241,6 +245,7 @@ func TestCreateAndUpdateWorkerTools(t *testing.T) {
 				"name":       "订单 Worker V2",
 				"route":      "/orders/v2/*",
 				"timeout_ms": 4500,
+				"env":        "TOKEN=xyz;REGION=us",
 				"enabled":    true,
 			},
 		},
@@ -271,5 +276,8 @@ func TestCreateAndUpdateWorkerTools(t *testing.T) {
 	}
 	if updateBody.Result.StructuredContent.Worker.TimeoutMS != 4500 {
 		t.Fatalf("更新后的 worker timeout_ms 不正确: %#v", updateBody.Result.StructuredContent.Worker)
+	}
+	if updateBody.Result.StructuredContent.Worker.Env != "TOKEN=xyz;REGION=us" {
+		t.Fatalf("更新后的 worker env 不正确: %#v", updateBody.Result.StructuredContent.Worker)
 	}
 }

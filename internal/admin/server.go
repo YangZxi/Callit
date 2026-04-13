@@ -235,6 +235,7 @@ func (s *Server) createWorker(c *gin.Context) {
 		Runtime:     req.Runtime,
 		Route:       req.Route,
 		TimeoutMS:   req.TimeoutMS,
+		Env:         req.Env,
 		Enabled:     req.Enabled,
 	})
 	if err != nil {
@@ -274,6 +275,7 @@ func (s *Server) updateWorker(c *gin.Context) {
 		Description: req.Description,
 		Route:       req.Route,
 		TimeoutMS:   req.TimeoutMS,
+		Env:         req.Env,
 		Enabled:     req.Enabled,
 	})
 	if err != nil {
