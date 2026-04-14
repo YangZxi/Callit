@@ -29,11 +29,16 @@ type Server struct {
 	store     *db.Store
 	reg       *Registry
 	workerDir string
-	invoker   *executor.Service
+	invoker   workerInvoker
+}
+
+type workerInvoker interface {
+	WorkerRunningTempDir() string
+	Execute(ctx context.Context, worker model.Worker, requestID string, workerRunningTempDir string, input model.WorkerInput) executor.ExecuteResult
 }
 
 // NewEngine 创建 Router Gin 引擎。
-func NewEngine(store *db.Store, reg *Registry, cfg config.Config, invoker *executor.Service) *gin.Engine {
+func NewEngine(store *db.Store, reg *Registry, cfg config.Config, invoker workerInvoker) *gin.Engine {
 	s := &Server{
 		store:     store,
 		reg:       reg,
@@ -42,9 +47,6 @@ func NewEngine(store *db.Store, reg *Registry, cfg config.Config, invoker *execu
 	}
 	e := gin.New()
 	e.Use(gin.Recovery(), common.RequestIDMiddleware())
-	e.GET("/", func(c *gin.Context) {
-		c.String(http.StatusOK, "Hello Callit!")
-	})
 	e.NoRoute(s.handleInvoke)
 	return e
 }
@@ -57,6 +59,10 @@ func (s *Server) handleInvoke(c *gin.Context) {
 
 	matched := s.reg.Match(path)
 	if !matched.Found {
+		if path == "/" {
+			c.String(http.StatusOK, "Hello Callit!")
+			return
+		}
 		c.String(http.StatusNotFound, "404 NotFound")
 		return
 	}
