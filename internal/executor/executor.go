@@ -34,7 +34,6 @@ const (
 	sandboxWorkspacePath = "/workspace"
 	sandboxRuntimePath   = "/runtime-lib"
 	sandboxTmpPath       = "/tmp"
-	sandboxCgroupV2Path  = "/sys/fs/cgroup"
 )
 
 // ExecuteResult 表示脚本执行结果。
@@ -240,7 +239,7 @@ func buildSandboxSpec(input sandboxCommandInput) (sandboxSpec, error) {
 		commandArgs = []string{"-c", bridgeScript}
 	case "node":
 		commandArgs = []string{
-			"--max-old-space-size=" + strconv.Itoa(defaultNodeMaxOldSpaceSizeMB),
+			// "--max-old-space-size=" + strconv.Itoa(defaultNodeMaxOldSpaceSizeMB),
 			"-e",
 			bridgeScript,
 		}
@@ -421,7 +420,6 @@ func renderSandboxConfig(spec sandboxSpec) (string, error) {
 	if spec.EnableCgroupV2 {
 		builder.WriteString("detect_cgroupv2: true\n")
 		builder.WriteString("use_cgroupv2: true\n")
-		builder.WriteString("cgroupv2_mount: \"" + sandboxCgroupV2Path + "\"\n")
 		builder.WriteString("cgroup_mem_max: " + strconv.FormatInt(spec.CgroupMemMaxBytes, 10) + "\n")
 	}
 	builder.WriteString("uidmap {\n  inside_id: \"0\"\n  outside_id: \"\"\n  count: 1\n}\n")
