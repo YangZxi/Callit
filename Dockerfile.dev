@@ -1,4 +1,23 @@
 FROM golang:1.25-bookworm@sha256:29e59af995c51a5bf63d072eca973b918e0e7af4db0e4667aa73f1b8da1a6d8c AS golang-runtime
+
+# 使用手动安装 nodejs 的方式，解决沙箱无法正常执行 node 命令的问题
+FROM debian:bookworm-slim AS node-runtime
+
+ARG NODE_VERSION=22.19.0
+ARG NODE_ARCH=linux-x64
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates \
+       curl \
+       xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /usr/local/nodejs \
+    && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${NODE_ARCH}.tar.xz" -o /tmp/node.tar.xz \
+    && tar -xJf /tmp/node.tar.xz -C /usr/local/nodejs --strip-components=1 \
+    && rm -f /tmp/node.tar.xz
+
 FROM python:3.10-bookworm AS app-dev
 
 WORKDIR /app
@@ -6,6 +25,15 @@ ARG NSJAIL_VERSION=3.6
 
 COPY --from=golang-runtime /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+COPY --from=node-runtime /usr/local/nodejs /usr/local/nodejs
+
+RUN ln -sf /usr/local/nodejs/bin/node /usr/local/bin/node \
+    && ln -sf /usr/local/nodejs/bin/npm /usr/local/bin/npm \
+    && ln -sf /usr/local/nodejs/bin/npx /usr/local/bin/npx \
+    && npm install -g pnpm@10 \
+    && ln -sf /usr/local/nodejs/bin/pnpm /usr/local/bin/pnpm \
+    && ln -sf /usr/local/nodejs/bin/pnpx /usr/local/bin/pnpx
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -20,8 +48,6 @@ RUN apt-get update \
        libprotobuf-dev \
        libtool \
        make \
-       nodejs \
-       npm \
        pkg-config \
        protobuf-compiler \
        sqlite3 \
@@ -31,7 +57,7 @@ RUN apt-get update \
     && install -m 0755 /tmp/nsjail-src/nsjail /usr/local/bin/nsjail \
     && cd /app \
     && rm -rf /tmp/nsjail-src \
-    && npm install -g pnpm@10 \
     && rm -rf /var/lib/apt/lists/*
+
 
 CMD ["bash"]

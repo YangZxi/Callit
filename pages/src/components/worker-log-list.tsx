@@ -166,7 +166,7 @@ export default function WorkerLogList({
   }, [activeTabsByLogId, availableTabs, selectedItem]);
 
   return (
-    <div className="relative flex h-[500px] flex-col gap-2 pr-1">
+    <div className="relative flex h-[calc(100vh-250px)] min-h-[500px] flex-col gap-4">
       <div className="flex justify-end gap-2">
         <Pagination
           page={page}
