@@ -76,11 +76,8 @@ func main() {
 
 	routerEngine := router.NewEngine(store, reg, cfg, invoker)
 	adminEngine := admin.NewEngine(store, reg, cronManager, &cfg)
-	var mcpHandler http.Handler
-	if cfg.AppConfig.MCP_Enable {
-		mcpHandler = mcp.NewHandler(store, reg, cronManager, &cfg)
-	}
-	handler := serverRouteHandler(adminEngine, mcpHandler, routerEngine, cfg.AdminPrefix, cfg.AppConfig.MCP_Enable)
+	mcpHandler := mcp.NewHandler(store, reg, cronManager, &cfg)
+	handler := serverRouteHandler(adminEngine, mcpHandler, routerEngine, &cfg)
 	magicHandler := magicapi.NewHandler(magicapi.Options{
 		KVService: magicKV.NewService(newRedisStore(cfg)),
 		DBService: workerDBService,
@@ -218,15 +215,15 @@ func buildListenAddrs(serverPort int, magicServerPort int) (string, string) {
 	return fmt.Sprintf(":%d", serverPort), fmt.Sprintf("127.0.0.1:%d", magicServerPort)
 }
 
-func serverRouteHandler(adminHandler http.Handler, mcpHandler http.Handler, routerHandler http.Handler, adminPrefix string, mcpEnabled bool) http.Handler {
+func serverRouteHandler(adminHandler http.Handler, mcpHandler http.Handler, routerHandler http.Handler, cfg *config.Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// /admin route
-		if isAdminPath(r.URL.Path, adminPrefix) {
+		if isAdminPath(r.URL.Path, cfg.AdminPrefix) {
 			adminHandler.ServeHTTP(w, r)
 			return
 		}
 		// mcp route
-		if mcpEnabled && mcpHandler != nil && isMCPPath(r.URL.Path) {
+		if isMCPPath(r.URL.Path) && cfg.AppConfig.MCP_Enable {
 			mcpHandler.ServeHTTP(w, r)
 			return
 		}
