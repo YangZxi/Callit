@@ -50,6 +50,9 @@ func ValidateRoute(route string) error {
 	if !strings.HasPrefix(route, "/") {
 		return fmt.Errorf("route 必须以 / 开头")
 	}
+	if route == "/*" {
+		return fmt.Errorf("route 不能使用泛根路径 /*")
+	}
 	if !strings.Contains(route, "*") {
 		return nil
 	}

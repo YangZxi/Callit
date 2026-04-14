@@ -220,14 +220,17 @@ func buildListenAddrs(serverPort int, magicServerPort int) (string, string) {
 
 func serverRouteHandler(adminHandler http.Handler, mcpHandler http.Handler, routerHandler http.Handler, adminPrefix string, mcpEnabled bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// /admin route
 		if isAdminPath(r.URL.Path, adminPrefix) {
 			adminHandler.ServeHTTP(w, r)
 			return
 		}
+		// mcp route
 		if mcpEnabled && mcpHandler != nil && isMCPPath(r.URL.Path) {
 			mcpHandler.ServeHTTP(w, r)
 			return
 		}
+		// workers route
 		routerHandler.ServeHTTP(w, r)
 	})
 }

@@ -60,6 +60,9 @@ func (r *Registry) Reload(functions []model.Worker) {
 		if !worker.Enabled {
 			continue
 		}
+		if strings.TrimSpace(worker.Route) == "/*" {
+			continue
+		}
 
 		target := nextExact
 		routeKey := normalizeRoutePath(worker.Route)
@@ -99,6 +102,9 @@ func (r *Registry) Match(route string) RouterInfo {
 	}
 
 	for _, item := range r.wildcardRoutes {
+		if item.prefix == "/" {
+			return RouterInfo{Worker: item.worker, Found: true}
+		}
 		if normalizedRoute == item.prefix || strings.HasPrefix(normalizedRoute, item.prefix+"/") {
 			return RouterInfo{Worker: item.worker, Found: true}
 		}

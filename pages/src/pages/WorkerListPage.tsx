@@ -49,6 +49,9 @@ function isValidWorkerRoute(route: string): boolean {
   if (!route.startsWith("/")) {
     return false;
   }
+  if (route === "/*") {
+    return false;
+  }
   if (!route.includes("*")) {
     return true;
   }
@@ -111,6 +114,10 @@ export default function WorkerListPage() {
     }
     if (!form.route.trim().startsWith("/")) {
       toast.warning("route 必须以 / 开头");
+      return;
+    }
+    if (form.route.trim() === "/*") {
+      toast.warning("route 不能使用泛根路径 /*");
       return;
     }
     if (!isValidWorkerRoute(form.route.trim())) {
