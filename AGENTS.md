@@ -17,8 +17,6 @@
 - Frontend: React + Vite + HeroUI
 - Database: SQLite3
 - Runtime: Python3 / Node.js
-- Router 端口: `3100`
-- Admin 端口: `3101`
 
 ## 3. 当前目录约定
 
@@ -74,14 +72,15 @@ go test ./...
 ### 4.3 Docker 运行
 
 ```bash
-docker compose up --build
+docker compose -f docker-compose.dev.yml up --build
 ```
 
 ## 5. 数据与文件约定
 
 - DB: `data/app.db`
+- WorkerDB: `data/worker.db`，Worker 通过 DB 接口(Callit SDK)所操作的数据库文件
 - Worker 目录: `data/workers/<worker_id>/`
-- 临时上传目录: `data/temps/<request_id>/`
+- 临时上传目录: `data/tmp/<request_id>/`
 - multipart 上传文件在请求结束后必须清理（`defer RemoveAll`）
 
 ## 6. 核心契约（禁止随意破坏）

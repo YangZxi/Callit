@@ -23,6 +23,7 @@ import (
 	"callit/internal/db"
 	"callit/internal/model"
 	"callit/internal/router"
+	workerpkg "callit/internal/worker"
 
 	"github.com/gin-gonic/gin"
 )
@@ -69,6 +70,18 @@ func apiError(c *gin.Context, httpStatus int, msg string) {
 
 // NewEngine 创建 Admin Gin 引擎。
 func NewEngine(store *db.Store, reg *router.Registry, cronReloader interface{ Reload(context.Context) error }, cfg *config.Config) *gin.Engine {
+	workersDir := cfg.WorkersDir
+	if strings.TrimSpace(workersDir) == "" {
+		workersDir = filepath.Join(cfg.DataDir, "workers")
+	}
+	workerTmpDir := cfg.WorkerRunningTempDir
+	if strings.TrimSpace(workerTmpDir) == "" {
+		workerTmpDir = filepath.Join(cfg.DataDir, "tmp")
+	}
+	runtimeLibDir := cfg.RuntimeLibDir
+	if strings.TrimSpace(runtimeLibDir) == "" {
+		runtimeLibDir = filepath.Join(cfg.DataDir, ".lib")
+	}
 	s := &Server{
 		store:        store,
 		reg:          reg,
@@ -77,7 +90,7 @@ func NewEngine(store *db.Store, reg *router.Registry, cronReloader interface{ Re
 		dataDir:      cfg.DataDir,
 		adminToken:   cfg.AdminToken,
 		chatHandler:  chat.NewHandler(store, cfg.DataDir, cfg.AppConfig),
-		workerSvc:    NewWorkerService(store, reg, cronReloader, cfg.DataDir),
+		workerSvc:    NewWorkerService(store, reg, cronReloader, workersDir, workerTmpDir, runtimeLibDir),
 	}
 	e := gin.New()
 	e.Use(gin.Recovery(), common.RequestIDMiddleware())
@@ -575,12 +588,12 @@ func (s *Server) renameFile(c *gin.Context) {
 		return
 	}
 
-	functionDir := filepath.Join(s.dataDir, "workers", id)
+	functionDir := filepath.Join(s.dataDir, "workers", id, "code")
 	if err := renameWorkerFile(functionDir, filename, newFilename); err != nil {
 		switch {
-		case errors.Is(err, errSourceFileNotExist):
+		case errors.Is(err, workerpkg.ErrSourceFileNotExist):
 			apiError(c, http.StatusNotFound, "文件不存在")
-		case errors.Is(err, errTargetFileExists):
+		case errors.Is(err, workerpkg.ErrTargetFileExists):
 			apiError(c, http.StatusConflict, "文件名已存在")
 		default:
 			apiError(c, http.StatusInternalServerError, fmt.Sprintf("重命名文件失败: %v", err))
@@ -617,16 +630,12 @@ func (s *Server) setWorkerEnabled(c *gin.Context, enabled bool) {
 		return
 	}
 
-	updated, err := s.store.Worker.SetEnabled(c.Request.Context(), id, enabled)
+	updated, err := s.workerSvc.SetWorkerEnabled(c.Request.Context(), id, enabled)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, ErrWorkerNotFound) {
 			apiError(c, http.StatusNotFound, "函数不存在")
 			return
 		}
-		apiError(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if err := s.reloadWorkersState(c.Request.Context()); err != nil {
 		apiError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -815,26 +824,6 @@ func flattenFiles(fileMap map[string][]*multipart.FileHeader) []*multipart.FileH
 	return result
 }
 
-var (
-	errSourceFileNotExist = errors.New("source file not exist")
-	errTargetFileExists   = errors.New("target file already exists")
-)
-
 func renameWorkerFile(functionDir string, filename string, newFilename string) error {
-	sourcePath := filepath.Join(functionDir, filename)
-	if _, err := os.Stat(sourcePath); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return errSourceFileNotExist
-		}
-		return err
-	}
-
-	targetPath := filepath.Join(functionDir, newFilename)
-	if _, err := os.Stat(targetPath); err == nil {
-		return errTargetFileExists
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-
-	return os.Rename(sourcePath, targetPath)
+	return workerpkg.RenameCodeFile(functionDir, filename, newFilename)
 }

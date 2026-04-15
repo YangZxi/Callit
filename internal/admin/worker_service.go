@@ -12,13 +12,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"unicode/utf8"
 
 	"callit/internal/db"
 	"callit/internal/model"
 	"callit/internal/router"
+	"callit/internal/worker"
 
 	"github.com/google/uuid"
 )
@@ -33,10 +33,12 @@ var (
 )
 
 type WorkerService struct {
-	store        *db.Store
-	reg          *router.Registry
-	cronReloader interface{ Reload(context.Context) error }
-	dataDir      string
+	store         *db.Store
+	reg           *router.Registry
+	cronReloader  interface{ Reload(context.Context) error }
+	workersDir    string
+	workerTmpDir  string
+	runtimeLibDir string
 }
 
 type CreateWorkerInput struct {
@@ -67,12 +69,14 @@ type FileContent struct {
 	PreviewDataURL string `json:"preview_data_url,omitempty"`
 }
 
-func NewWorkerService(store *db.Store, reg *router.Registry, cronReloader interface{ Reload(context.Context) error }, dataDir string) *WorkerService {
+func NewWorkerService(store *db.Store, reg *router.Registry, cronReloader interface{ Reload(context.Context) error }, workersDir string, workerTmpDir string, runtimeLibDir string) *WorkerService {
 	return &WorkerService{
-		store:        store,
-		reg:          reg,
-		cronReloader: cronReloader,
-		dataDir:      dataDir,
+		store:         store,
+		reg:           reg,
+		cronReloader:  cronReloader,
+		workersDir:    workersDir,
+		workerTmpDir:  workerTmpDir,
+		runtimeLibDir: runtimeLibDir,
 	}
 }
 
@@ -122,16 +126,20 @@ func (s *WorkerService) CreateWorker(ctx context.Context, input CreateWorkerInpu
 		}
 		return model.Worker{}, err
 	}
-
-	workerDir := filepath.Join(s.dataDir, "workers", created.ID)
-	if err := os.MkdirAll(workerDir, 0o755); err != nil {
+	spec := s.workerSpec(created, "")
+	if err := spec.EnsureLayout(); err != nil {
 		_ = s.store.Worker.Delete(context.Background(), created.ID)
 		return model.Worker{}, fmt.Errorf("创建函数目录失败: %w", err)
 	}
-	if err := createMainFileFromTemplate(workerDir, created.Runtime); err != nil {
-		_ = os.RemoveAll(workerDir)
+	if err := createMainFileFromTemplate(spec.WorkerCodeDir, created.Runtime); err != nil {
+		_ = os.RemoveAll(spec.WorkerRootDir)
 		_ = s.store.Worker.Delete(context.Background(), created.ID)
 		return model.Worker{}, fmt.Errorf("创建入口文件失败: %w", err)
+	}
+	if err := spec.WriteMetadata(); err != nil {
+		_ = os.RemoveAll(spec.WorkerRootDir)
+		_ = s.store.Worker.Delete(context.Background(), created.ID)
+		return model.Worker{}, fmt.Errorf("写入 metadata 失败: %w", err)
 	}
 	if err := s.reloadWorkersState(ctx); err != nil {
 		return model.Worker{}, err
@@ -184,6 +192,9 @@ func (s *WorkerService) UpdateWorker(ctx context.Context, input UpdateWorkerInpu
 		}
 		return model.Worker{}, err
 	}
+	if err := s.workerSpec(updated, "").WriteMetadata(); err != nil {
+		return model.Worker{}, fmt.Errorf("写入 metadata 失败: %w", err)
+	}
 	if err := s.reloadWorkersState(ctx); err != nil {
 		return model.Worker{}, err
 	}
@@ -210,11 +221,11 @@ func (s *WorkerService) ListWorkerFiles(ctx context.Context, id string) ([]strin
 		return nil, err
 	}
 
-	workerDir := filepath.Join(s.dataDir, "workers", id)
-	if err := os.MkdirAll(workerDir, 0o755); err != nil {
+	spec := s.workerSpec(model.Worker{ID: id}, "")
+	if err := spec.EnsureLayout(); err != nil {
 		return nil, fmt.Errorf("创建函数目录失败: %w", err)
 	}
-	return listFiles(workerDir)
+	return spec.ListCodeFiles()
 }
 
 func (s *WorkerService) GetWorkerFile(ctx context.Context, id string, filename string) (FileContent, error) {
@@ -226,7 +237,8 @@ func (s *WorkerService) GetWorkerFile(ctx context.Context, id string, filename s
 		return FileContent{}, err
 	}
 
-	target := filepath.Join(s.dataDir, "workers", id, filename)
+	spec := s.workerSpec(model.Worker{ID: id}, "")
+	target := spec.CodeFilePath(filename)
 	raw, err := os.ReadFile(target)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -264,15 +276,15 @@ func (s *WorkerService) SaveWorkerFileContent(ctx context.Context, id string, fi
 		return nil, err
 	}
 
-	workerDir := filepath.Join(s.dataDir, "workers", id)
-	if err := os.MkdirAll(workerDir, 0o755); err != nil {
+	spec := s.workerSpec(model.Worker{ID: id}, "")
+	if err := spec.EnsureLayout(); err != nil {
 		return nil, fmt.Errorf("创建 Worker 目录失败: %w", err)
 	}
-	target := filepath.Join(workerDir, filename)
+	target := spec.CodeFilePath(filename)
 	if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
 		return nil, fmt.Errorf("写入文件失败: %w", err)
 	}
-	return listFiles(workerDir)
+	return spec.ListCodeFiles()
 }
 
 func (s *WorkerService) UploadWorkerFiles(ctx context.Context, id string, fileHeaders []*multipart.FileHeader) ([]string, error) {
@@ -283,16 +295,16 @@ func (s *WorkerService) UploadWorkerFiles(ctx context.Context, id string, fileHe
 		return nil, fmt.Errorf("至少上传一个文件")
 	}
 
-	workerDir := filepath.Join(s.dataDir, "workers", id)
-	if err := os.MkdirAll(workerDir, 0o755); err != nil {
+	spec := s.workerSpec(model.Worker{ID: id}, "")
+	if err := spec.EnsureLayout(); err != nil {
 		return nil, fmt.Errorf("创建 Worker 目录失败: %w", err)
 	}
 	for _, fh := range fileHeaders {
-		if err := saveUploadedFile(workerDir, fh); err != nil {
+		if err := saveUploadedFile(spec.WorkerCodeDir, fh); err != nil {
 			return nil, err
 		}
 	}
-	return listFiles(workerDir)
+	return spec.ListCodeFiles()
 }
 
 func (s *WorkerService) DeleteWorkerFile(ctx context.Context, id string, filename string) error {
@@ -308,8 +320,8 @@ func (s *WorkerService) DeleteWorkerFile(ctx context.Context, id string, filenam
 	if filename == mainFilenameByRuntime(worker.Runtime) {
 		return ErrMainFileDeletion
 	}
-
-	target := filepath.Join(s.dataDir, "workers", id, filename)
+	spec := s.workerSpec(worker, "")
+	target := spec.CodeFilePath(filename)
 	if err := os.Remove(target); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return ErrFileNotFound
@@ -333,6 +345,34 @@ func (s *WorkerService) reloadWorkersState(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (s *WorkerService) SetWorkerEnabled(ctx context.Context, id string, enabled bool) (model.Worker, error) {
+	updated, err := s.store.Worker.SetEnabled(ctx, id, enabled)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.Worker{}, ErrWorkerNotFound
+		}
+		return model.Worker{}, err
+	}
+	if err := s.workerSpec(updated, "").WriteMetadata(); err != nil {
+		return model.Worker{}, fmt.Errorf("写入 metadata 失败: %w", err)
+	}
+	if err := s.reloadWorkersState(ctx); err != nil {
+		return model.Worker{}, err
+	}
+	return updated, nil
+}
+
+func (s *WorkerService) workerSpec(workerModel model.Worker, requestID string) worker.WorkerSpec {
+	if requestID == "" {
+		return worker.NewWorkerSpec(s.workersDir, s.runtimeLibDir, workerModel)
+	}
+	spec, err := worker.NewRuntimeWorkerSpec(s.workersDir, s.workerTmpDir, s.runtimeLibDir, workerModel, requestID)
+	if err != nil {
+		return worker.WorkerSpec{}
+	}
+	return spec
 }
 
 func validateFilename(filename string) error {
@@ -441,20 +481,5 @@ func templateFilenameByRuntime(runtime string) string {
 }
 
 func listFiles(dir string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return []string{}, nil
-		}
-		return nil, err
-	}
-	files := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		files = append(files, entry.Name())
-	}
-	sort.Strings(files)
-	return files, nil
+	return worker.ListFiles(dir)
 }

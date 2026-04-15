@@ -184,12 +184,12 @@ Worker 接收到的上下文模型为 `WorkerInput`：
 
 #### `request.body`
 
-- 类型：`any`
+- 类型：`object | array`
 - 来源：根据 `Content-Type` 对请求体做结构化解析后的结果
 - 说明：
-  - `application/json`：解析为 JSON 对象或数组
-  - `application/x-www-form-urlencoded`：解析为键值对象
-  - `multipart/form-data`：解析为表单字段和文件元信息
+  - `application/json`：解析为 JSON 对象{}或数组[]
+  - `application/x-www-form-urlencoded`：解析为 JSON 对象 {}
+  - `multipart/form-data`：同 application/x-www-form-urlencoded，文件数据会以键值对对象形式传入，具体参考 [上传文件示例](#上传文件)
   - 其他类型：默认返回空对象 `{}`
 
 #### `request.body_str`
@@ -372,6 +372,7 @@ def handler(ctx):
     "method": "POST",
     "body": {
       "title": "demo",
+      // key 值是 form-data 中的字段名
       "file": [
         {
           "filename": "hello.txt",

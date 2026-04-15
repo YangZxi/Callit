@@ -225,9 +225,13 @@ func TestCreateAndUpdateWorkerTools(t *testing.T) {
 		t.Fatalf("create_worker 未返回有效 worker")
 	}
 
-	mainFile := filepath.Join(dataDir, "workers", createBody.Result.StructuredContent.Worker.ID, "main.py")
+	mainFile := filepath.Join(dataDir, "workers", createBody.Result.StructuredContent.Worker.ID, "code", "main.py")
 	if _, err := os.Stat(mainFile); err != nil {
 		t.Fatalf("create_worker 未生成 main.py: %v", err)
+	}
+	metadataPath := filepath.Join(dataDir, "workers", createBody.Result.StructuredContent.Worker.ID, "metadata.json")
+	if _, err := os.Stat(metadataPath); err != nil {
+		t.Fatalf("create_worker 未生成 metadata.json: %v", err)
 	}
 
 	updateResp := doMCPRequest(t, handler, "mcp-token", map[string]any{
@@ -271,5 +275,16 @@ func TestCreateAndUpdateWorkerTools(t *testing.T) {
 	}
 	if updateBody.Result.StructuredContent.Worker.TimeoutMS != 4500 {
 		t.Fatalf("更新后的 worker timeout_ms 不正确: %#v", updateBody.Result.StructuredContent.Worker)
+	}
+	rawMetadata, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatalf("读取 metadata.json 失败: %v", err)
+	}
+	var metadata model.Worker
+	if err := json.Unmarshal(rawMetadata, &metadata); err != nil {
+		t.Fatalf("解析 metadata.json 失败: %v", err)
+	}
+	if metadata.Name != "订单 Worker V2" || metadata.Route != "/orders/v2/*" || metadata.TimeoutMS != 4500 {
+		t.Fatalf("metadata.json 未同步更新: %#v", metadata)
 	}
 }

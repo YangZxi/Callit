@@ -5,6 +5,7 @@ import (
 	"callit/internal/config"
 	"callit/internal/db"
 	"callit/internal/model"
+	workerpkg "callit/internal/worker"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -174,7 +175,11 @@ func (h *Handler) Stream(c *gin.Context) {
 		return
 	}
 
-	workerDir := filepath.Join(h.dataDir, "workers", worker.ID)
+	workerDir := workerpkg.NewWorkerSpec(
+		filepath.Join(h.dataDir, "workers"),
+		filepath.Join(h.dataDir, ".lib"),
+		worker,
+	).WorkerCodeDir
 	enrichedUserMessage := userMessageContent
 	if prefix := buildReferencedFilesPrefix(workerDir, userMessageContent); prefix != "" {
 		enrichedUserMessage = prefix + "\n\n" + userMessageContent

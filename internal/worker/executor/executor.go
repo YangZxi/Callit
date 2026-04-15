@@ -18,6 +18,7 @@ import (
 
 	"callit/internal/config"
 	"callit/internal/model"
+	"callit/internal/worker"
 )
 
 //go:embed worker_entrypoints/*
@@ -34,6 +35,7 @@ const (
 	sandboxWorkspacePath = "/workspace"
 	sandboxRuntimePath   = "/runtime-lib"
 	sandboxTmpPath       = "/tmp"
+	sandboxDataPath      = "/data"
 )
 
 // ExecuteResult 表示脚本执行结果。
@@ -51,22 +53,23 @@ type ExecuteResult struct {
 }
 
 // Run 执行函数脚本。
-func Run(parent context.Context, worker model.Worker, workerDir string, runtimeDir string, workerRunningTempDir string, cfg config.Config, input model.WorkerInput) (result ExecuteResult) {
+func Run(parent context.Context, workerSpec worker.WorkerSpec, cfg config.Config, input model.WorkerInput) (result ExecuteResult) {
 	started := time.Now()
 	result = ExecuteResult{Headers: map[string]string{}}
 	defer func() {
 		result.DurationMS = time.Since(started).Milliseconds()
 	}()
 
-	mainFile := mainFilenameByRuntime(worker.Runtime)
+	worker := workerSpec.Worker
+	mainFile := workerSpec.MainFilename()
 	if mainFile == "" {
 		result.Err = fmt.Errorf("不支持的 runtime: %s", worker.Runtime)
 		slog.Error("不支持的 runtime", "runtime", worker.Runtime)
 		return
 	}
-	if _, err := os.Stat(filepath.Join(workerDir, mainFile)); err != nil {
+	if _, err := os.Stat(filepath.Join(workerSpec.WorkerCodeDir, mainFile)); err != nil {
 		result.Err = fmt.Errorf("主文件不存在: %s", mainFile)
-		slog.Error("Worker 主文件不存在", "worker_dir", workerDir, "main_file", mainFile, "err", err)
+		slog.Error("Worker 主文件不存在", "worker_dir", workerSpec.WorkerCodeDir, "main_file", mainFile, "err", err)
 		return
 	}
 
@@ -78,15 +81,12 @@ func Run(parent context.Context, worker model.Worker, workerDir string, runtimeD
 	}
 
 	bridgeStdout, bridgeStderr, runErr := runWithNsJailBridge(sandboxCommandInput{
-		Parent:               parent,
-		Worker:               worker,
-		RequestID:            input.Event.RequestID,
-		WorkerDir:            workerDir,
-		RuntimeDir:           runtimeDir,
-		WorkerRunningTempDir: workerRunningTempDir,
-		EnableCgroupV2:       cfg.EnableCgroupV2,
-		ServerPort:           cfg.MagicServerPort,
-		Payload:              payload,
+		Parent:         parent,
+		WorkerSpec:     workerSpec,
+		RequestID:      input.Event.RequestID,
+		EnableCgroupV2: cfg.EnableCgroupV2,
+		ServerPort:     cfg.MagicServerPort,
+		Payload:        payload,
 	})
 	result.Stderr = bridgeStderr
 
@@ -155,15 +155,12 @@ func parseScriptOutput(raw []byte) (model.WorkerOutput, error) {
 }
 
 type sandboxCommandInput struct {
-	Parent               context.Context
-	Worker               model.Worker
-	RequestID            string
-	WorkerDir            string
-	RuntimeDir           string
-	WorkerRunningTempDir string
-	EnableCgroupV2       bool
-	ServerPort           int
-	Payload              []byte
+	Parent         context.Context
+	WorkerSpec     worker.WorkerSpec
+	RequestID      string
+	EnableCgroupV2 bool
+	ServerPort     int
+	Payload        []byte
 }
 
 func runWithNsJailBridge(input sandboxCommandInput) (stdout string, stderr string, err error) {
@@ -204,37 +201,41 @@ type sandboxMount struct {
 }
 
 func buildSandboxSpec(input sandboxCommandInput) (sandboxSpec, error) {
-	workerDir, err := filepath.Abs(input.WorkerDir)
+	workerCodeDir, err := filepath.Abs(input.WorkerSpec.WorkerCodeDir)
 	if err != nil {
 		return sandboxSpec{}, fmt.Errorf("解析 Worker 目录失败: %w", err)
 	}
-	workerRunningTempDir, err := filepath.Abs(input.WorkerRunningTempDir)
+	workerDataDir, err := filepath.Abs(input.WorkerSpec.WorkerDataDir)
+	if err != nil {
+		return sandboxSpec{}, fmt.Errorf("解析 Worker data 目录失败: %w", err)
+	}
+	workerTmpDir, err := filepath.Abs(input.WorkerSpec.WorkerTempDir)
 	if err != nil {
 		return sandboxSpec{}, fmt.Errorf("解析运行时目录失败: %w", err)
 	}
-	runtimeDir, err := filepath.Abs(input.RuntimeDir)
+	runtimeDir, err := filepath.Abs(input.WorkerSpec.RuntimeLibDir)
 	if err != nil {
 		return sandboxSpec{}, fmt.Errorf("解析 runtime 依赖目录失败: %w", err)
 	}
-	runtimePath := filepath.Join(runtimeDir, runtimeLibNameByRuntime(input.Worker.Runtime))
+	runtimePath := filepath.Join(runtimeDir, runtimeLibNameByRuntime(input.WorkerSpec.Worker.Runtime))
 	if info, statErr := os.Stat(runtimePath); statErr != nil || !info.IsDir() {
 		if statErr == nil {
 			statErr = fmt.Errorf("不是目录")
 		}
 		return sandboxSpec{}, fmt.Errorf("runtime 依赖目录不存在: %s: %w", runtimePath, statErr)
 	}
-	commandPath, err := resolveRuntimeExecutable(input.Worker.Runtime)
+	commandPath, err := resolveRuntimeExecutable(input.WorkerSpec.Worker.Runtime)
 	if err != nil {
 		return sandboxSpec{}, err
 	}
 
-	bridgeScript, err := readBridgeScript(input.Worker.Runtime)
+	bridgeScript, err := readBridgeScript(input.WorkerSpec.Worker.Runtime)
 	if err != nil {
 		return sandboxSpec{}, err
 	}
 
 	var commandArgs []string
-	switch input.Worker.Runtime {
+	switch input.WorkerSpec.Worker.Runtime {
 	case "python":
 		commandArgs = []string{"-c", bridgeScript}
 	case "node":
@@ -244,22 +245,23 @@ func buildSandboxSpec(input sandboxCommandInput) (sandboxSpec, error) {
 			bridgeScript,
 		}
 	default:
-		return sandboxSpec{}, fmt.Errorf("不支持的 runtime: %s", input.Worker.Runtime)
+		return sandboxSpec{}, fmt.Errorf("不支持的 runtime: %s", input.WorkerSpec.Worker.Runtime)
 	}
 
 	spec := sandboxSpec{
 		CWD:               sandboxWorkspacePath,
 		CommandPath:       commandPath,
 		CommandArgs:       commandArgs,
-		CgroupMemMaxBytes: sandboxCgroupMemMaxBytesByRuntime(input.Worker.Runtime),
+		CgroupMemMaxBytes: sandboxCgroupMemMaxBytesByRuntime(input.WorkerSpec.Worker.Runtime),
 		EnableCgroupV2:    input.EnableCgroupV2,
 		RlimitNoFile:      defaultSandboxRlimitFile,
 	}
 
 	spec.Mounts = append(spec.Mounts,
-		sandboxMount{Source: workerDir, Destination: sandboxWorkspacePath, ReadOnly: true, IsBind: true, FSType: "bind"},
+		sandboxMount{Source: workerCodeDir, Destination: sandboxWorkspacePath, ReadOnly: true, IsBind: true, FSType: "bind"},
+		sandboxMount{Source: workerDataDir, Destination: sandboxDataPath, ReadOnly: false, IsBind: true, FSType: "bind"},
 		sandboxMount{Source: runtimePath, Destination: sandboxRuntimePath, ReadOnly: true, IsBind: true, FSType: "bind"},
-		sandboxMount{Source: workerRunningTempDir, Destination: sandboxTmpPath, ReadOnly: false, IsBind: true, FSType: "bind"},
+		sandboxMount{Source: workerTmpDir, Destination: sandboxTmpPath, ReadOnly: false, IsBind: true, FSType: "bind"},
 		sandboxMount{Destination: "/proc", FSType: "proc"},
 	)
 
@@ -269,7 +271,7 @@ func buildSandboxSpec(input sandboxCommandInput) (sandboxSpec, error) {
 		}
 		spec.Mounts = append(spec.Mounts, sandboxMount{Source: mountPath, Destination: mountPath, ReadOnly: true, IsBind: true, FSType: "bind"})
 	}
-	slog.Debug("构建沙箱挂载配置", "worker_dir", workerDir, "runtime_path", runtimePath, "temp_dir", input.WorkerRunningTempDir, "mount_count", len(spec.Mounts))
+	slog.Debug("构建沙箱挂载配置", "worker_code_dir", workerCodeDir, "worker_data_dir", workerDataDir, "runtime_path", runtimePath, "temp_dir", input.WorkerSpec.WorkerTempDir, "mount_count", len(spec.Mounts))
 
 	return spec, nil
 }
@@ -324,8 +326,8 @@ func runtimeSupportMountPaths() []string {
 func buildSandboxCommand(input sandboxCommandInput) (*exec.Cmd, func(), error) {
 	cleanup := func() {}
 	var err error
-	timeLimit := input.Worker.TimeoutMS / 1000
-	if input.Worker.TimeoutMS%1000 != 0 {
+	timeLimit := input.WorkerSpec.Worker.TimeoutMS / 1000
+	if input.WorkerSpec.Worker.TimeoutMS%1000 != 0 {
 		timeLimit++
 	}
 	if timeLimit <= 0 {
@@ -369,17 +371,17 @@ func buildSandboxCommand(input sandboxCommandInput) (*exec.Cmd, func(), error) {
 
 	args := buildNsJailArgs(configPath, spec, timeLimit)
 
-	runtimeDirAbs, err := filepath.Abs(input.RuntimeDir)
+	runtimeDirAbs, err := filepath.Abs(input.WorkerSpec.RuntimeLibDir)
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("解析 runtime 依赖目录失败: %w", err)
 	}
 	cmd := exec.CommandContext(input.Parent, nsjailPath, args...)
-	cmd.Dir = input.WorkerDir
-	cmd.Env = buildSandboxEnv(runtimeDirAbs, input.Worker.Runtime, spec.CommandPath, workerEnvConfig{
+	cmd.Dir = input.WorkerSpec.WorkerCodeDir
+	cmd.Env = buildSandboxEnv(runtimeDirAbs, input.WorkerSpec.Worker.Runtime, spec.CommandPath, workerEnvConfig{
 		CallitMagicApiBaseURL: fmt.Sprintf("http://127.0.0.1:%d", input.ServerPort),
-		WorkerID:              input.Worker.ID,
+		WorkerID:              input.WorkerSpec.Worker.ID,
 		RequestID:             input.RequestID,
-		CustomKV:              parseWorkerEnvPairs(input.Worker.Env),
+		CustomKV:              parseWorkerEnvPairs(input.WorkerSpec.Worker.Env),
 	})
 	return cmd, cleanup, nil
 }
@@ -421,6 +423,7 @@ func renderSandboxConfig(spec sandboxSpec) (string, error) {
 	if spec.EnableCgroupV2 {
 		builder.WriteString("detect_cgroupv2: true\n")
 		builder.WriteString("use_cgroupv2: true\n")
+		builder.WriteString("cgroupv2_mount: \"/sys/fs/cgroup\"\n")
 		builder.WriteString("cgroup_mem_max: " + strconv.FormatInt(spec.CgroupMemMaxBytes, 10) + "\n")
 	}
 	builder.WriteString("uidmap {\n  inside_id: \"0\"\n  outside_id: \"\"\n  count: 1\n}\n")

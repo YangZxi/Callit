@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"callit/internal/worker"
 )
 
 func TestRenameWorkerFileSuccess(t *testing.T) {
@@ -43,15 +45,15 @@ func TestRenameWorkerFileConflict(t *testing.T) {
 	}
 
 	err := renameWorkerFile(dir, oldName, newName)
-	if !errors.Is(err, errTargetFileExists) {
-		t.Fatalf("expected errTargetFileExists, got %v", err)
+	if !errors.Is(err, worker.ErrTargetFileExists) {
+		t.Fatalf("expected ErrTargetFileExists, got %v", err)
 	}
 }
 
 func TestRenameWorkerFileSourceNotExist(t *testing.T) {
 	dir := t.TempDir()
 	err := renameWorkerFile(dir, "not_found.ts", "new.ts")
-	if !errors.Is(err, errSourceFileNotExist) {
-		t.Fatalf("expected errSourceFileNotExist, got %v", err)
+	if !errors.Is(err, worker.ErrSourceFileNotExist) {
+		t.Fatalf("expected ErrSourceFileNotExist, got %v", err)
 	}
 }

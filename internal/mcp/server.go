@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	adminsvc "callit/internal/admin"
@@ -82,9 +83,21 @@ type Handler struct {
 }
 
 func NewHandler(store *db.Store, reg *router.Registry, cronReloader interface{ Reload(context.Context) error }, cfg *config.Config) http.Handler {
+	workersDir := cfg.WorkersDir
+	if strings.TrimSpace(workersDir) == "" {
+		workersDir = filepath.Join(cfg.DataDir, "workers")
+	}
+	workerTmpDir := cfg.WorkerRunningTempDir
+	if strings.TrimSpace(workerTmpDir) == "" {
+		workerTmpDir = filepath.Join(cfg.DataDir, "tmp")
+	}
+	runtimeLibDir := cfg.RuntimeLibDir
+	if strings.TrimSpace(runtimeLibDir) == "" {
+		runtimeLibDir = filepath.Join(cfg.DataDir, ".lib")
+	}
 	h := &Handler{
 		cfg:     cfg,
-		service: adminsvc.NewWorkerService(store, reg, cronReloader, cfg.DataDir),
+		service: adminsvc.NewWorkerService(store, reg, cronReloader, workersDir, workerTmpDir, runtimeLibDir),
 	}
 	h.server = h.newSDKServer()
 

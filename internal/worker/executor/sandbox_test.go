@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"callit/internal/model"
+	"callit/internal/worker"
 )
 
 func TestBuildSandboxSpecIncludesWorkerRuntimeAndUploadMounts(t *testing.T) {
@@ -29,11 +30,14 @@ func TestBuildSandboxSpecIncludesWorkerRuntimeAndUploadMounts(t *testing.T) {
 	}
 
 	spec, err := buildSandboxSpec(sandboxCommandInput{
-		Parent:               context.Background(),
-		Worker:               model.Worker{Runtime: "node", TimeoutMS: 5000},
-		WorkerDir:            workspaceDir,
-		RuntimeDir:           runtimeDir,
-		WorkerRunningTempDir: workerRunningTempDir,
+		Parent: context.Background(),
+		WorkerSpec: mustNewRuntimeWorkerSpec(t,
+			filepath.Join(filepath.Dir(filepath.Dir(workspaceDir)), "workers"),
+			filepath.Dir(workerRunningTempDir),
+			runtimeDir,
+			model.Worker{ID: "worker-1", Runtime: "node", TimeoutMS: 5000},
+			filepath.Base(workerRunningTempDir),
+		),
 	})
 	if err != nil {
 		t.Fatalf("构建沙箱配置失败: %v", err)
@@ -53,8 +57,18 @@ func TestBuildSandboxSpecIncludesWorkerRuntimeAndUploadMounts(t *testing.T) {
 		t.Fatalf("沙箱工作目录不正确，got=%q want=%q", spec.CWD, "/workspace")
 	}
 	assertMountExists("/workspace", true, "bind")
+	assertMountExists("/data", false, "bind")
 	assertMountExists("/runtime-lib", true, "bind")
 	assertMountExists("/tmp", false, "bind")
+}
+
+func mustNewRuntimeWorkerSpec(t *testing.T, workersDir string, workerTempBaseDir string, runtimeLibDir string, workerModel model.Worker, requestID string) worker.WorkerSpec {
+	t.Helper()
+	spec, err := worker.NewRuntimeWorkerSpec(workersDir, workerTempBaseDir, runtimeLibDir, workerModel, requestID)
+	if err != nil {
+		t.Fatalf("构造 Runtime WorkerSpec 失败: %v", err)
+	}
+	return spec
 }
 
 func TestBuildNsJailArgsDoesNotIncludeCgroupPidsMax(t *testing.T) {
@@ -336,7 +350,7 @@ module.exports = { handler };
 
 	cmd := exec.Command("node", filepath.Join(currentDir, "worker_entrypoints", "node.js"))
 	cmd.Dir = workerDir
-	cmd.Env = append(os.Environ(), "NODE_PATH="+filepath.Join(currentDir, "..", "..", "data", ".lib", "node", "node_modules"))
+	cmd.Env = append(os.Environ(), "NODE_PATH="+filepath.Join(currentDir, "..", "..", "..", "data", ".lib", "node", "node_modules"))
 	cmd.Stdin = strings.NewReader(`{"request":{"method":"GET","uri":"/","url":"http://127.0.0.1/"}}`)
 
 	output, err := cmd.CombinedOutput()
@@ -395,7 +409,7 @@ module.exports = { handler };
 
 	cmd := exec.Command("node", filepath.Join(currentDir, "worker_entrypoints", "node.js"))
 	cmd.Dir = workerDir
-	cmd.Env = append(os.Environ(), "NODE_PATH="+filepath.Join(currentDir, "..", "..", "data", ".lib", "node", "node_modules"))
+	cmd.Env = append(os.Environ(), "NODE_PATH="+filepath.Join(currentDir, "..", "..", "..", "data", ".lib", "node", "node_modules"))
 	cmd.Stdin = strings.NewReader(`{"request":{"method":"GET","uri":"/","url":"http://127.0.0.1/"}}`)
 
 	output, err := cmd.CombinedOutput()

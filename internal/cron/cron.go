@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"callit/internal/db"
-	"callit/internal/executor"
 	"callit/internal/model"
+	"callit/internal/worker/executor"
 
 	"github.com/google/uuid"
 )

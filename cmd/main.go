@@ -18,12 +18,13 @@ import (
 	"callit/internal/config"
 	"callit/internal/cron"
 	"callit/internal/db"
-	"callit/internal/executor"
 	magicapi "callit/internal/magic-api"
 	magicDB "callit/internal/magic-api/db"
 	magicKV "callit/internal/magic-api/kv"
 	"callit/internal/mcp"
+	"callit/internal/migrate"
 	"callit/internal/router"
+	"callit/internal/worker/executor"
 
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
@@ -56,6 +57,10 @@ func main() {
 	}()
 	if err := cfg.Sync(context.Background(), store.AppConfig); err != nil {
 		slog.Error("加载应用配置失败", "err", err)
+		os.Exit(1)
+	}
+	if err := migrate.NewService(store, cfg).RebuildWorkerDirStructure(context.Background()); err != nil {
+		slog.Error("迁移 Worker 目录失败", "err", err)
 		os.Exit(1)
 	}
 

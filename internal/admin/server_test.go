@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -323,5 +324,55 @@ func TestUpdateWorkerWithoutRuntimeField(t *testing.T) {
 	}
 	if body.Data.Route != "/worker-update-http-v2" {
 		t.Fatalf("更新后的 route 不正确: %#v", body.Data)
+	}
+}
+
+func TestEnableWorkerSyncsMetadata(t *testing.T) {
+	store := openAdminTestStore(t)
+	created, err := store.Worker.Create(context.Background(), model.Worker{
+		ID:        "worker-enable-http",
+		Name:      "启停测试 Worker",
+		Runtime:   "python",
+		Route:     "/worker-enable-http",
+		TimeoutMS: 3000,
+		Enabled:   false,
+	})
+	if err != nil {
+		t.Fatalf("创建测试 Worker 失败: %v", err)
+	}
+
+	dataDir := t.TempDir()
+	workerDir := filepath.Join(dataDir, "workers", created.ID)
+	if err := os.MkdirAll(filepath.Join(workerDir, "code"), 0o755); err != nil {
+		t.Fatalf("创建 code 目录失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workerDir, "metadata.json"), []byte(`{"enabled":false}`), 0o644); err != nil {
+		t.Fatalf("写入初始 metadata 失败: %v", err)
+	}
+
+	cfg := config.Config{
+		AdminPrefix: "/admin",
+		AdminToken:  "test-token",
+		DataDir:     dataDir,
+	}
+	engine := NewEngine(store, router.New(), nil, &cfg)
+
+	resp := doAdminJSONRequest(t, engine, http.MethodPost, "/admin/api/workers/enable", map[string]any{
+		"id": created.ID,
+	})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("启用接口应返回 200: code=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	raw, err := os.ReadFile(filepath.Join(workerDir, "metadata.json"))
+	if err != nil {
+		t.Fatalf("读取 metadata 失败: %v", err)
+	}
+	var metadata model.Worker
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		t.Fatalf("解析 metadata 失败: %v", err)
+	}
+	if !metadata.Enabled {
+		t.Fatalf("metadata enabled 未同步: %#v", metadata)
 	}
 }

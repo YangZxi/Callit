@@ -18,8 +18,9 @@ import (
 	"callit/internal/common/requestparse"
 	"callit/internal/config"
 	"callit/internal/db"
-	"callit/internal/executor"
 	"callit/internal/model"
+	workerpkg "callit/internal/worker"
+	"callit/internal/worker/executor"
 
 	"github.com/gin-gonic/gin"
 )
@@ -119,7 +120,12 @@ func (s *Server) handleInvoke(c *gin.Context) {
 	timeoutCtx, cancel := context.WithTimeout(c.Request.Context(), time.Duration(worker.TimeoutMS)*time.Millisecond)
 	defer cancel()
 
-	workerDir := filepath.Join(s.workerDir, worker.ID)
+	workerSpec, err := workerpkg.NewRuntimeWorkerSpec(s.workerDir, s.invoker.WorkerRunningTempDir(), "", worker, requestID)
+	if err != nil {
+		common.ErrorResponse(c, http.StatusInternalServerError, "构造 Worker 运行目录失败")
+		return
+	}
+	workerDir := workerSpec.WorkerCodeDir
 	execResult := s.invoker.Execute(timeoutCtx, worker, requestID, workerRunningTempDir, input)
 
 	if execResult.TimedOut {

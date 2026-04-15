@@ -8,29 +8,31 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"callit/internal/config"
 	"callit/internal/db"
 	"callit/internal/model"
+	workerpkg "callit/internal/worker"
 )
 
 // Service 负责执行 Worker 并记录运行日志。
 type Service struct {
-	store                *db.Store
-	workersDir           string
-	workerRunningTempDir string
-	runtimeDir           string
-	cfg                  config.Config
+	store             *db.Store
+	workersDir        string
+	workerTempBaseDir string
+	runtimeLibDir     string
+	cfg               config.Config
 }
 
 func NewService(store *db.Store, cfg config.Config) *Service {
 	return &Service{
-		store:                store,
-		workersDir:           cfg.WorkersDir,
-		workerRunningTempDir: cfg.WorkerRunningTempDir,
-		runtimeDir:           cfg.RuntimeLibDir,
-		cfg:                  cfg,
+		store:             store,
+		workersDir:        cfg.WorkersDir,
+		workerTempBaseDir: cfg.WorkerRunningTempDir,
+		runtimeLibDir:     cfg.RuntimeLibDir,
+		cfg:               cfg,
 	}
 }
 
@@ -38,15 +40,18 @@ func (s *Service) WorkerRunningTempDir() string {
 	if s == nil {
 		return ""
 	}
-	return s.workerRunningTempDir
+	return s.workerTempBaseDir
 }
 
-func (s *Service) Execute(ctx context.Context, worker model.Worker, requestID string, workerRunningTempDir string, input model.WorkerInput) ExecuteResult {
-	workerDir := filepath.Join(s.workersDir, worker.ID)
-	if workerRunningTempDir == "" {
-		workerRunningTempDir = filepath.Join(s.workerRunningTempDir, requestID)
+func (s *Service) Execute(ctx context.Context, worker model.Worker, requestID string, workerTmpDir string, input model.WorkerInput) ExecuteResult {
+	spec, err := workerpkg.NewRuntimeWorkerSpec(s.workersDir, s.workerTempBaseDir, s.runtimeLibDir, worker, requestID)
+	if err != nil {
+		return ExecuteResult{Err: err}
 	}
-	execResult := Run(ctx, worker, workerDir, s.runtimeDir, workerRunningTempDir, s.cfg, input)
+	if strings.TrimSpace(workerTmpDir) != "" {
+		spec.WorkerTempDir = workerTmpDir
+	}
+	execResult := Run(ctx, spec, s.cfg, input)
 	if execResult.Err != nil {
 		slog.Warn(fmt.Sprintf("Worker 执行失败[%s]", input.Event.Trigger), "request_id", requestID, "worker_id", worker.ID, "duration_ms", execResult.DurationMS, "err", execResult.Err)
 	} else {
@@ -57,21 +62,21 @@ func (s *Service) Execute(ctx context.Context, worker model.Worker, requestID st
 }
 
 func CreateWorkerRunningTempDir(baseDir string, requestID string) (string, func(), error) {
-	workerRunningTempDir := filepath.Join(baseDir, requestID)
+	workerTmpDir := filepath.Join(baseDir, requestID)
 	cleanup := func() {}
-	if workerRunningTempDir != "" {
-		if err := os.MkdirAll(workerRunningTempDir, 0o755); err != nil {
-			slog.Error("创建运行时目录失败", "request_id", requestID, "path", workerRunningTempDir, "err", err)
+	if workerTmpDir != "" {
+		if err := os.MkdirAll(workerTmpDir, 0o755); err != nil {
+			slog.Error("创建运行时目录失败", "request_id", requestID, "path", workerTmpDir, "err", err)
 			return "", cleanup, err
 		}
-		slog.Debug("创建运行时目录", "request_id", requestID, "path", workerRunningTempDir)
+		slog.Debug("创建运行时目录", "request_id", requestID, "path", workerTmpDir)
 	}
 	cleanup = func() {
-		if rmErr := os.RemoveAll(workerRunningTempDir); rmErr != nil {
-			slog.Warn("删除请求临时目录失败", "path", workerRunningTempDir, "err", rmErr)
+		if rmErr := os.RemoveAll(workerTmpDir); rmErr != nil {
+			slog.Warn("删除请求临时目录失败", "path", workerTmpDir, "err", rmErr)
 		}
 	}
-	return workerRunningTempDir, cleanup, nil
+	return workerTmpDir, cleanup, nil
 }
 
 func (s *Service) recordRunningLog(workerID string, requestID string, input model.WorkerInput, execResult ExecuteResult) {
