@@ -83,6 +83,7 @@ export default function WorkerDetailPage() {
   const [fileBusy, setFileBusy] = useState(false);
   const [fnBusy, setFnBusy] = useState(false);
   const [logModalOpen, setLogModalOpen] = useState(false);
+  const [deleteFileConfirmOpen, setDeleteFileConfirmOpen] = useState(false);
   const [logLoading, setLogLoading] = useState(false);
   const [logPage, setLogPage] = useState(1);
   const [logTotal, setLogTotal] = useState(0);
@@ -321,11 +322,8 @@ export default function WorkerDetailPage() {
     }
   };
 
-  const deleteCurrentFile = async () => {
+  const performDeleteCurrentFile = useCallback(async () => {
     if (!selectedFile || fileBusy) return;
-    const ok = window.confirm(`确认删除文件 ${selectedFile} ？`);
-    if (!ok) return;
-
     setFileBusy(true);
     try {
       await api.post<{ ok: boolean }>(`/workers/${id}/files/delete`, {
@@ -335,6 +333,17 @@ export default function WorkerDetailPage() {
     } finally {
       setFileBusy(false);
     }
+  }, [selectedFile, fileBusy, id, loadFiles]);
+
+  const deleteCurrentFile = async () => {
+    if (!selectedFile || fileBusy) return;
+    if (selectedFile === "package.json") {
+      setDeleteFileConfirmOpen(true);
+      return;
+    }
+    const ok = window.confirm(`确认删除文件 ${selectedFile} ？`);
+    if (!ok) return;
+    await performDeleteCurrentFile();
   };
 
   const renameCurrentFile = async () => {
@@ -594,6 +603,45 @@ export default function WorkerDetailPage() {
           </div>
         </div>
       </div>
+      <XModal
+        isOpen={deleteFileConfirmOpen}
+        size="lg"
+        header="删除 package.json 提示"
+        isDismissable={!fileBusy}
+        isKeyboardDismissDisabled={fileBusy}
+        onOpenChange={(open) => {
+          if (fileBusy) return;
+          setDeleteFileConfirmOpen(open);
+        }}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              isDisabled={fileBusy}
+              onPress={() => setDeleteFileConfirmOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              variant="primary"
+              isPending={fileBusy}
+              onPress={() => {
+                void (async () => {
+                  await performDeleteCurrentFile();
+                  setDeleteFileConfirmOpen(false);
+                })();
+              }}
+            >
+              知道了
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm leading-6 text-default-700">
+          删除 package.json 文件会使 Worker 转为 CommonJS，ESM 中的特性将不再可用，
+          你需要修改 JS 代码为 CJS 的标准导出和导入后 Worker 才能正常运行
+        </p>
+      </XModal>
       <XModal
         isOpen={logModalOpen}
         size="cover"

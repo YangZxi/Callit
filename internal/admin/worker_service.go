@@ -131,7 +131,7 @@ func (s *WorkerService) CreateWorker(ctx context.Context, input CreateWorkerInpu
 		_ = s.store.Worker.Delete(context.Background(), created.ID)
 		return model.Worker{}, fmt.Errorf("创建函数目录失败: %w", err)
 	}
-	if err := createMainFileFromTemplate(spec.WorkerCodeDir, created.Runtime); err != nil {
+	if err := createWorkerFilesFromTemplate(spec.WorkerCodeDir, created.Runtime); err != nil {
 		_ = os.RemoveAll(spec.WorkerRootDir)
 		_ = s.store.Worker.Delete(context.Background(), created.ID)
 		return model.Worker{}, fmt.Errorf("创建入口文件失败: %w", err)
@@ -433,6 +433,16 @@ func mainFilenameByRuntime(runtime string) string {
 	}
 }
 
+func createWorkerFilesFromTemplate(workerDir string, runtime string) error {
+	if err := createMainFileFromTemplate(workerDir, runtime); err != nil {
+		return err
+	}
+	if runtime == "node" {
+		return createNodeWorkerPackageJSON(workerDir)
+	}
+	return nil
+}
+
 func createMainFileFromTemplate(workerDir string, runtime string) error {
 	mainFile := mainFilenameByRuntime(runtime)
 	templateFile := templateFilenameByRuntime(runtime)
@@ -451,6 +461,15 @@ func createMainFileFromTemplate(workerDir string, runtime string) error {
 	target := filepath.Join(workerDir, mainFile)
 	if err := os.WriteFile(target, content, 0o644); err != nil {
 		return fmt.Errorf("写入主文件失败: %w", err)
+	}
+	return nil
+}
+
+func createNodeWorkerPackageJSON(workerDir string) error {
+	content := []byte("{\n  \"type\": \"module\"\n}\n")
+	target := filepath.Join(workerDir, "package.json")
+	if err := os.WriteFile(target, content, 0o644); err != nil {
+		return fmt.Errorf("写入 package.json 失败: %w", err)
 	}
 	return nil
 }

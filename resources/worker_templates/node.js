@@ -1,11 +1,32 @@
+// import { kv, db } from "callit";
+
+/**
+{
+  "request": {
+    "method": "POST",
+    "uri": "/test",
+    "url": "http://127.0.0.1:3100/test?name=callit",
+    "params": {
+      "name": "callit"
+    },
+    "headers": {
+      "Content-Type": "application/json",
+    },
+    "body": {
+      "message": "hello",
+    },
+    "body_str": "..."
+  },
+  "event": {}
+}
+*/
 // Callit
-function handler(ctx) {
+export default async function handler(ctx) {
     const { request } = ctx;
     // const { headers, body, params } = request;
-    // const { kv } = require("callit");
+
     // const kvClient = kv.newClient("group1");
     // await kvClient.set("key", "val", 3);
-    // const { db } = require("callit");
     // const dbClient = db.newClient();
     // const result = await dbClient.exec("select * from users where status = ?", 1);
 
@@ -20,5 +41,3 @@ function handler(ctx) {
         }
     }
 }
-
-module.exports = handler;

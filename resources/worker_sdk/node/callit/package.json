@@ -1,0 +1,12 @@
+{
+  "name": "callit",
+  "private": true,
+  "type": "commonjs",
+  "main": "./index.js",
+  "exports": {
+    ".": {
+      "require": "./index.js",
+      "import": "./index.mjs"
+    }
+  }
+}
