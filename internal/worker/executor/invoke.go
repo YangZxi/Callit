@@ -134,6 +134,7 @@ func (s *Service) buildWorkerLog(workerID string, requestID string, input model.
 		Stdin:      stdinText,
 		Stdout:     execResult.Stdout,
 		Stderr:     execResult.Stderr,
+		ExecLog:    execResult.ExecLog,
 		Result:     execResult.Result,
 		Error:      errMsg,
 		DurationMS: execResult.DurationMS,

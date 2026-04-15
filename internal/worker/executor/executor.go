@@ -25,6 +25,7 @@ import (
 var workerEntrypointsFS embed.FS
 
 const logAndOutputSeparator = "\n**=====^=====**\n"
+const workerLogSeparatorLine = "==============="
 const (
 	defaultPythonCgroupMemMaxBytes = 64 * 1024 * 1024
 	defaultNodeCgroupMemMaxBytes   = 64 * 1024 * 1024
@@ -45,6 +46,7 @@ type ExecuteResult struct {
 	Body       any
 	Stdout     string
 	Stderr     string
+	ExecLog    string
 	Result     string
 	DurationMS int64
 	TimedOut   bool
@@ -87,6 +89,7 @@ func Run(parent context.Context, workerSpec worker.WorkerSpec, cfg config.Config
 		ServerPort:     cfg.MagicServerPort,
 		Payload:        payload,
 	})
+	result.ExecLog = bridgeStdout
 	result.Stderr = bridgeStderr
 
 	if errors.Is(parent.Err(), context.DeadlineExceeded) {
@@ -97,18 +100,19 @@ func Run(parent context.Context, workerSpec worker.WorkerSpec, cfg config.Config
 	}
 	if runErr != nil {
 		// slog.Error("脚本执行失败", "worker_id", worker.ID, "request_id", input.Event.RequestID, "stderr", bridgeStderr, "err", runErr)
-		result.Stdout = bridgeStdout
+		result.Stdout = extractWorkerStdout(result.ExecLog)
 		result.Err = buildScriptExecuteError(bridgeStderr, runErr)
 		return
 	}
 
 	logOutput, resultOutput, err := splitBridgeOutput(bridgeStdout)
 	if err != nil {
-		result.Stdout = bridgeStdout
+		result.Stdout = extractWorkerStdout(result.ExecLog)
 		result.Err = fmt.Errorf("脚本 stdout 格式错误: %w", err)
 		return
 	}
-	result.Stdout = logOutput
+	_ = logOutput
+	result.Stdout = extractWorkerStdout(result.ExecLog)
 	result.Result = resultOutput
 
 	scriptOut, err := parseScriptOutput([]byte(resultOutput))
@@ -653,6 +657,37 @@ func splitBridgeOutput(stdout string) (logOutput string, resultOutput string, er
 		return "", "", fmt.Errorf("分隔符后结果为空")
 	}
 	return logOutput, resultOutput, nil
+}
+
+func extractWorkerStdout(execLog string) string {
+	if strings.TrimSpace(execLog) == "" {
+		return ""
+	}
+
+	logSource := execLog
+	if logOutput, _, err := splitBridgeOutput(execLog); err == nil {
+		logSource = logOutput
+	}
+
+	lines := strings.Split(logSource, "\n")
+	startIdx := -1
+	endIdx := -1
+	for index, line := range lines {
+		if strings.TrimSpace(line) != workerLogSeparatorLine {
+			continue
+		}
+		if startIdx < 0 {
+			startIdx = index
+			continue
+		}
+		endIdx = index
+	}
+
+	if startIdx >= 0 && endIdx > startIdx {
+		return strings.Trim(strings.Join(lines[startIdx+1:endIdx], "\n"), "\n")
+	}
+
+	return strings.TrimSpace(logSource)
 }
 
 // 用于在 Python 虚拟环境目录下定位真实的 site-packages 路径，供构建 PYTHONPATH 使用。

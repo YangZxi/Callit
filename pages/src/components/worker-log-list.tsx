@@ -12,13 +12,14 @@ export type WorkerLogItem = {
   stdin: string;
   stdout: string;
   stderr: string;
+  exec_log: string;
   result: string;
   error: string;
   duration_ms: number;
   created_at: string;
 };
 
-type LogTabKey = "result" | "error" | "stdin" | "stdout" | "stderr";
+type LogTabKey = "result" | "error" | "stdin" | "stdout" | "stderr" | "exec_log";
 
 type WorkerLogListProps = {
   loading: boolean;
@@ -32,12 +33,13 @@ type WorkerLogListProps = {
 type LogTabConfig = {
   key: LogTabKey;
   label: string;
+  fixed?: boolean;
   content: string;
   toneClassName: string;
   labelClassName: string;
 };
 
-const logTabOrder: LogTabKey[] = ["result", "error", "stdin", "stdout", "stderr"];
+const logTabOrder: LogTabKey[] = ["result", "error", "stdin", "stdout", "stderr", "exec_log"];
 
 function formatLogTime(raw: string): string {
   const dt = new Date(raw);
@@ -75,6 +77,7 @@ function buildLogTabs(item: WorkerLogItem): LogTabConfig[] {
     result: {
       key: "result",
       label: "result",
+      fixed: true,
       content: formattedResult,
       toneClassName: "bg-accent/20 text-accent-600",
       labelClassName: "text-accent",
@@ -89,6 +92,7 @@ function buildLogTabs(item: WorkerLogItem): LogTabConfig[] {
     stdin: {
       key: "stdin",
       label: "stdin",
+      fixed: true,
       content: formattedStdin,
       toneClassName: "bg-success/20 text-success-700",
       labelClassName: "text-success",
@@ -96,6 +100,7 @@ function buildLogTabs(item: WorkerLogItem): LogTabConfig[] {
     stdout: {
       key: "stdout",
       label: "stdout",
+      fixed: true,
       content: item.stdout,
       toneClassName: "bg-default/40 text-default-700",
       labelClassName: "text-default-800",
@@ -107,11 +112,19 @@ function buildLogTabs(item: WorkerLogItem): LogTabConfig[] {
       toneClassName: "bg-warning/20 text-warning-700",
       labelClassName: "text-warning",
     },
+    exec_log: {
+      key: "exec_log",
+      label: "exec_log",
+      fixed: true,
+      content: item.exec_log,
+      toneClassName: "bg-default/40 text-default-700",
+      labelClassName: "text-default-800",
+    },
   };
 
   return logTabOrder
     .map((key) => tabMap[key])
-    .filter((tab) => tab.content);
+    .filter((tab) => tab.fixed === true || tab.content);
 }
 
 function getDefaultTabKey(tabs: LogTabConfig[]): LogTabKey | null {

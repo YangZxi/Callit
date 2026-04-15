@@ -12,6 +12,7 @@ type WorkerLog struct {
 	Stdin      string    `json:"stdin" gorm:"column:stdin;type:text"`
 	Stdout     string    `json:"stdout" gorm:"column:stdout;type:text"`
 	Stderr     string    `json:"stderr" gorm:"column:stderr;type:text"`
+	ExecLog    string    `json:"exec_log" gorm:"column:exec_log;type:text"`
 	Result     string    `json:"result" gorm:"column:result;type:text"`
 	Error      string    `json:"error" gorm:"column:error;type:text"`
 	DurationMS int64     `json:"duration_ms" gorm:"column:duration_ms"`
