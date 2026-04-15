@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -43,6 +42,7 @@ type Server struct {
 	cronReloader interface{ Reload(context.Context) error }
 	idGenerator  *snowflake.Generator
 	dataDir      string
+	workersDir   string
 	adminToken   string
 	chatHandler  *chat.Handler
 	workerSvc    *WorkerService
@@ -88,6 +88,7 @@ func NewEngine(store *db.Store, reg *router.Registry, cronReloader interface{ Re
 		cronReloader: cronReloader,
 		idGenerator:  snowflake.NewGenerator(1),
 		dataDir:      cfg.DataDir,
+		workersDir:   workersDir,
 		adminToken:   cfg.AdminToken,
 		chatHandler:  chat.NewHandler(store, cfg.DataDir, cfg.AppConfig),
 		workerSvc:    NewWorkerService(store, reg, cronReloader, workersDir, workerTmpDir, runtimeLibDir),
@@ -417,9 +418,8 @@ func (s *Server) deleteWorker(c *gin.Context) {
 		return
 	}
 
-	functionDir := filepath.Join(s.dataDir, "workers", id)
-	if err := os.RemoveAll(functionDir); err != nil {
-		apiError(c, http.StatusInternalServerError, fmt.Sprintf("删除函数目录失败: %v", err))
+	if err := workerpkg.SoftDeleteWorkerRootDir(s.workersDir, id); err != nil {
+		apiError(c, http.StatusInternalServerError, fmt.Sprintf("删除 Worker 失败: %v", err))
 		return
 	}
 	if err := s.reloadWorkersState(c.Request.Context()); err != nil {
@@ -588,7 +588,7 @@ func (s *Server) renameFile(c *gin.Context) {
 		return
 	}
 
-	functionDir := filepath.Join(s.dataDir, "workers", id, "code")
+	functionDir := filepath.Join(s.workersDir, id, "code")
 	if err := renameWorkerFile(functionDir, filename, newFilename); err != nil {
 		switch {
 		case errors.Is(err, workerpkg.ErrSourceFileNotExist):

@@ -141,6 +141,27 @@ var (
 	ErrTargetFileExists   = namedError("target file exists")
 )
 
+func DeletedWorkerRootDir(workersDir string, workerID string) string {
+	return filepath.Join(workersDir, "deleted_"+workerID)
+}
+
+func SoftDeleteWorkerRootDir(workersDir string, workerID string) error {
+	sourcePath := filepath.Join(workersDir, workerID)
+	if _, err := os.Stat(sourcePath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	targetPath := DeletedWorkerRootDir(workersDir, workerID)
+	if _, err := os.Stat(targetPath); err == nil {
+		return fmt.Errorf("软删除目标目录已存在: %s", targetPath)
+	} else if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return os.Rename(sourcePath, targetPath)
+}
+
 func writeFileAtomically(path string, content []byte, perm os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err

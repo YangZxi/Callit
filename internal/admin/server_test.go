@@ -376,3 +376,46 @@ func TestEnableWorkerSyncsMetadata(t *testing.T) {
 		t.Fatalf("metadata enabled 未同步: %#v", metadata)
 	}
 }
+
+func TestDeleteWorkerSoftDeletesWorkerDir(t *testing.T) {
+	store := openAdminTestStore(t)
+	createAdminTestWorker(t, store, "worker-delete-soft")
+
+	dataDir := t.TempDir()
+	workerDir := filepath.Join(dataDir, "workers", "worker-delete-soft")
+	if err := os.MkdirAll(filepath.Join(workerDir, "code"), 0o755); err != nil {
+		t.Fatalf("创建 code 目录失败: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(workerDir, "data"), 0o755); err != nil {
+		t.Fatalf("创建 data 目录失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workerDir, "data", "users.db"), []byte("demo"), 0o644); err != nil {
+		t.Fatalf("写入 data 文件失败: %v", err)
+	}
+
+	cfg := config.Config{
+		AdminPrefix: "/admin",
+		AdminToken:  "test-token",
+		DataDir:     dataDir,
+	}
+	engine := NewEngine(store, router.New(), nil, &cfg)
+
+	resp := doAdminJSONRequest(t, engine, http.MethodPost, "/admin/api/workers/delete", map[string]any{
+		"id": "worker-delete-soft",
+	})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("删除接口应返回 200: code=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	if _, err := store.Worker.GetByID(context.Background(), "worker-delete-soft"); err == nil {
+		t.Fatalf("Worker 数据库记录应已删除")
+	}
+	if _, err := os.Stat(workerDir); !os.IsNotExist(err) {
+		t.Fatalf("原目录应不存在，err=%v", err)
+	}
+
+	deletedDir := filepath.Join(dataDir, "workers", "deleted_worker-delete-soft")
+	if _, err := os.Stat(filepath.Join(deletedDir, "data", "users.db")); err != nil {
+		t.Fatalf("软删除目录应保留 data 文件: %v", err)
+	}
+}
