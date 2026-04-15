@@ -48,35 +48,17 @@ Admin 服务访问前缀。程序会自动保证以 `/` 开头，并去掉末尾
 
 以下配置项属于 AppConfig 白名单，支持数据库配置。
 
-### `AI_BASE_URL`
-AI 服务基础地址。
-- 类型：`string`
-- 默认值：`https://api.openai.com/v1`
-- 数据库配置：支持数据库配置（数据库的 key: `AI_BASE_URL`）
+### `MCP_ENABLE`
+是否启用 MCP 接口。
+- 类型：`bool`
+- 默认值：`false`
+- 数据库配置：支持数据库配置（数据库的 key: `MCP_ENABLE`）
 
-### `AI_API_KEY`
-AI 服务访问密钥。
+### `MCP_TOKEN`
+MCP 接口访问令牌。
 - 类型：`string`
 - 默认值：空字符串
-- 数据库配置：支持数据库配置（数据库的 key: `AI_API_KEY`）
-
-### `AI_MODEL`
-默认使用的 AI 模型名称。
-- 类型：`string`
-- 默认值：`gpt-5`
-- 数据库配置：支持数据库配置（数据库的 key: `AI_MODEL`）
-
-### `AI_MAX_CONTEXT_TOKENS`
-单次对话允许的最大上下文 Token 数。
-- 类型：`int`
-- 默认值：`16000`
-- 数据库配置：支持数据库配置（数据库的 key: `AI_MAX_CONTEXT_TOKENS`）
-
-### `AI_TIMEOUT_MS`
-AI 请求超时时间，单位毫秒。
-- 类型：`int`
-- 默认值：`60000`
-- 数据库配置：支持数据库配置（数据库的 key: `AI_TIMEOUT_MS`）
+- 数据库配置：支持数据库配置（数据库的 key: `MCP_TOKEN`）
 
 ## 数据库存储说明
 
@@ -90,5 +72,5 @@ AI 请求超时时间，单位毫秒。
 ## 补充说明
 
 - 基础运行配置在程序启动时读取，主要用于服务启动、目录定位、数据库初始化等核心能力。
-- AppConfig 主要用于运行中的应用级配置，当前主要是 AI 相关设置。
+- AppConfig 主要用于运行中的应用级配置，当前主要用于 MCP 相关设置。
 - 如果数据库中某个 AppConfig key 存在但值为空，启动同步时不会覆盖环境变量或默认值。

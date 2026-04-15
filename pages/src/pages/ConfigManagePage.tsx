@@ -6,11 +6,6 @@ import api from "@/lib/api";
 import { Input, Switch } from "@/components/heroui";
 
 type AppConfigKey =
-  | "AI_BASE_URL"
-  | "AI_API_KEY"
-  | "AI_MODEL"
-  | "AI_MAX_CONTEXT_TOKENS"
-  | "AI_TIMEOUT_MS"
   | "MCP_ENABLE"
   | "MCP_TOKEN";
 
@@ -29,11 +24,6 @@ type ConfigSource = {
 type ConfigValues = Record<AppConfigKey, string>;
 
 const defaultValues: ConfigValues = {
-  AI_BASE_URL: "",
-  AI_API_KEY: "",
-  AI_MODEL: "",
-  AI_MAX_CONTEXT_TOKENS: "",
-  AI_TIMEOUT_MS: "",
   MCP_ENABLE: "false",
   MCP_TOKEN: "",
 };
@@ -44,11 +34,6 @@ const fields: Array<{
   placeholder: string;
   type?: "text" | "password" | "number" | "switch";
 }> = [
-  { key: "AI_BASE_URL", label: "AI Base URL", placeholder: "https://api.openai.com/v1" },
-  { key: "AI_API_KEY", label: "AI API Key", placeholder: "sk-xxx", type: "password" },
-  { key: "AI_MODEL", label: "AI 模型", placeholder: "gpt-5" },
-  { key: "AI_MAX_CONTEXT_TOKENS", label: "最大上下文 Token", placeholder: "16000", type: "number" },
-  { key: "AI_TIMEOUT_MS", label: "请求超时(ms)", placeholder: "60000", type: "number" },
   { key: "MCP_ENABLE", label: "MCP Enable", placeholder: "false", type: "switch" },
   { key: "MCP_TOKEN", label: "MCP Token", placeholder: "mcp-token", type: "text" },
 ];
@@ -71,18 +56,7 @@ export default function ConfigManagePage() {
   const [sources, setSources] = useState<Partial<Record<AppConfigKey, ConfigSource>>>({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
 
-  const intErrors = useMemo(() => {
-    const errors: Partial<Record<AppConfigKey, string>> = {};
-    const intKeys: AppConfigKey[] = ["AI_MAX_CONTEXT_TOKENS", "AI_TIMEOUT_MS"];
-    for (const key of intKeys) {
-      const raw = values[key].trim();
-      const n = Number(raw);
-      if (!raw || Number.isNaN(n) || !Number.isInteger(n) || n <= 0) {
-        errors[key] = "请输入正整数";
-      }
-    }
-    return errors;
-  }, [values]);
+  const intErrors = useMemo(() => ({} as Partial<Record<AppConfigKey, string>>), []);
 
   const sourceHint = (key: AppConfigKey) => {
     const meta = sources[key];
@@ -118,10 +92,6 @@ export default function ConfigManagePage() {
 
   const save = async () => {
     setSubmitAttempted(true);
-    if (intErrors.AI_MAX_CONTEXT_TOKENS || intErrors.AI_TIMEOUT_MS) {
-      toast.danger("请先修正数字类型配置");
-      return;
-    }
 
     setSaving(true);
     try {

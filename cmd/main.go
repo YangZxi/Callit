@@ -59,9 +59,15 @@ func main() {
 		slog.Error("加载应用配置失败", "err", err)
 		os.Exit(1)
 	}
-	if err := migrate.NewService(store, cfg).RebuildWorkerDirStructure(context.Background()); err != nil {
+	// worker 目录改造  2026-04-15
+	migrateService := migrate.NewService(store, cfg)
+	if err := migrateService.RebuildWorkerDirStructure(context.Background()); err != nil {
 		slog.Error("迁移 Worker 目录失败", "err", err)
 		os.Exit(1)
+	}
+	// web ai agent 功能移除  2026-04-15
+	if err := migrateService.CleanupRemovedChatArtifacts(context.Background()); err != nil {
+		slog.Error("清理AI聊天遗留数据失败", "err", err)
 	}
 
 	reg := router.New()

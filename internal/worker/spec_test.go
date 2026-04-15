@@ -46,8 +46,8 @@ func TestWorkerSpecEnsureLayoutAndMetadata(t *testing.T) {
 			t.Fatalf("路径不是目录: %s", path)
 		}
 	}
-	if spec.WorkerTmpDir != filepath.Join(baseDir, "tmp", "req-1") {
-		t.Fatalf("WorkerTmpDir 不正确: %s", spec.WorkerTmpDir)
+	if spec.WorkerTempDir != filepath.Join(baseDir, "tmp", "req-1") {
+		t.Fatalf("WorkerTempDir 不正确: %s", spec.WorkerTempDir)
 	}
 
 	raw, err := os.ReadFile(spec.MetadataPath)
@@ -73,8 +73,8 @@ func TestWorkerSpecListCodeFilesOnlyReadsCodeDir(t *testing.T) {
 		TimeoutMS: 3000,
 		Enabled:   true,
 	})
-	if spec.WorkerTmpDir != "" {
-		t.Fatalf("静态 WorkerSpec 不应包含 WorkerTmpDir: %q", spec.WorkerTmpDir)
+	if spec.WorkerTempDir != "" {
+		t.Fatalf("静态 WorkerSpec 不应包含 WorkerTempDir: %q", spec.WorkerTempDir)
 	}
 	if err := spec.EnsureLayout(); err != nil {
 		t.Fatalf("EnsureLayout 失败: %v", err)

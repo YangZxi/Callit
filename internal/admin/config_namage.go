@@ -103,8 +103,6 @@ func (s *Server) AdminUpsertConfigHandler(cfg *config.Config) gin.HandlerFunc {
 				return
 			}
 		}
-
-		s.chatHandler.ReloadAIConfig(cfg.AppConfig)
 		apiSuccess(c, gin.H{"success": true})
 	}
 }

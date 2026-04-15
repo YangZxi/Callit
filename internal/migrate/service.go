@@ -27,6 +27,27 @@ func NewService(store *db.Store, cfg config.Config) *Service {
 	}
 }
 
+func (s *Service) CleanupRemovedChatArtifacts(ctx context.Context) error {
+	if s.store != nil && s.store.AppConfig != nil {
+		removedChatAppConfigKeys := []string{
+			"AI_BASE_URL",
+			"AI_API_KEY",
+			"AI_MODEL",
+			"AI_MAX_CONTEXT_TOKENS",
+			"AI_TIMEOUT_MS",
+		}
+		if err := s.store.AppConfig.DeleteConfigs(ctx, removedChatAppConfigKeys); err != nil {
+			return fmt.Errorf("删除废弃 AI 配置项失败: %w", err)
+		}
+	}
+
+	chatSessionsDir := filepath.Join(s.cfg.DataDir, "chat-sessions")
+	if err := os.RemoveAll(chatSessionsDir); err != nil {
+		return fmt.Errorf("删除 chat_sessions 目录失败: %w", err)
+	}
+	return nil
+}
+
 func (s *Service) RebuildWorkerDirStructure(ctx context.Context) error {
 	entries, err := os.ReadDir(s.cfg.WorkersDir)
 	if err != nil {

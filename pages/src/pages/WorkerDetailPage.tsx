@@ -5,7 +5,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import type { IDisposable } from "monaco-editor";
 
 import api from "@/lib/api";
-import Chatbox from "@/components/chatbox/chatbox";
 import EditorPanelAction from "@/components/editor-panel-action";
 import HttpDrawer from "@/components/http-drawer";
 import XModal from "@/components/modal";
@@ -412,13 +411,6 @@ export default function WorkerDetailPage() {
     setLogModalOpen(true);
   };
 
-  const handleChatFilesChanged = useCallback(async () => {
-    await loadFiles(selectedFile || undefined);
-    if (selectedFile) {
-      await loadFileContent(selectedFile);
-    }
-  }, [loadFiles, loadFileContent, selectedFile]);
-
   if (loading) {
     return <section className="py-6 text-sm text-default-500">正在加载 Worker 详情...</section>;
   }
@@ -619,9 +611,6 @@ export default function WorkerDetailPage() {
           onRefresh={() => void loadWorkerLogs(logPage)}
         />
       </XModal>
-      {/* <div className="absolute bottom-4 right-4 z-40">
-        <Chatbox workerId={id} onFilesChanged={handleChatFilesChanged} />
-      </div> */}
     </section>
   );
 }

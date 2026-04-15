@@ -79,3 +79,22 @@ func (dao *AppConfigDAO) SetConfig(ctx context.Context, cfg *config.Config, key,
 	}
 	return nil
 }
+
+// DeleteConfigs 按精确 key 批量删除配置项。
+func (dao *AppConfigDAO) DeleteConfigs(ctx context.Context, keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	normalizedKeys := make([]string, 0, len(keys))
+	for _, key := range keys {
+		trimmed := strings.ToUpper(strings.TrimSpace(key))
+		if trimmed == "" {
+			continue
+		}
+		normalizedKeys = append(normalizedKeys, trimmed)
+	}
+	if len(normalizedKeys) == 0 {
+		return nil
+	}
+	return dao.db.WithContext(ctx).Where("key IN ?", normalizedKeys).Delete(&model.AppConfigEntry{}).Error
+}

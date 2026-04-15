@@ -60,13 +60,6 @@ type AdminUpsertConfigRequest struct {
 	AppConfig map[string]*string `json:"app_config"`
 }
 
-// ChatStreamRequest 表示聊天流式请求体。
-type ChatStreamRequest struct {
-	Mode         string `json:"mode"`
-	Message      string `json:"message"`
-	HistoryLimit int    `json:"history_limit"`
-}
-
 // CreateCronTaskRequest 表示创建 cron_task 的请求体。
 type CreateCronTaskRequest struct {
 	Cron string `json:"cron"`

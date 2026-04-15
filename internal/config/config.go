@@ -16,13 +16,6 @@ import (
 // AppConfig 中的值会被数据库覆盖
 // 如果你的配置不需要被数据库接管，请不要放在这里
 type AppConfig struct {
-	// AI
-	AI_BaseURL          string `config:"AI_BASE_URL"`
-	AI_APIKey           string `config:"AI_API_KEY"`
-	AI_Model            string `config:"AI_MODEL"`
-	AI_MaxContextTokens int    `config:"AI_MAX_CONTEXT_TOKENS"`
-	AI_TimeoutMS        int    `config:"AI_TIMEOUT_MS"`
-
 	// MCP
 	MCP_Enable bool   `config:"MCP_ENABLE"`
 	MCP_Token  string `config:"MCP_TOKEN"`
@@ -39,7 +32,6 @@ type Config struct {
 	DatabasePath         string
 	WorkersDir           string
 	WorkerRunningTempDir string
-	ChatSessionsDir      string
 	RuntimeLibDir        string
 	MaxFileSize          int64
 
@@ -98,7 +90,6 @@ func Load() Config {
 		DatabasePath:         getEnv("DATABASE_PATH", "./data/app.db"),
 		WorkersDir:           getEnv("WORKERS_DIR", "./data/workers"),
 		WorkerRunningTempDir: getEnv("WORKER_RUNNING_TEMP_DIR", "./data/tmp"),
-		ChatSessionsDir:      getEnv("CHAT_SESSIONS_DIR", "./data/chat-sessions"),
 		RuntimeLibDir:        getEnv("RUNTIME_LIB_DIR", "./data/.lib"),
 
 		MaxFileSize: (1 << 20) * 100, // 100MB
@@ -216,13 +207,8 @@ func (cfg *Config) GetAppConfigValue(key string) (string, bool) {
 // 优先级：数据库 > env > 硬编码。
 func (cfg *Config) Sync(ctx context.Context, dao AppConfigDao) error {
 	cfg.AppConfig = AppConfig{
-		AI_BaseURL:          getEnv("AI_BASE_URL", "https://api.openai.com/v1"),
-		AI_APIKey:           getEnv("AI_API_KEY", ""),
-		AI_Model:            getEnv("AI_MODEL", "gpt-5"),
-		AI_MaxContextTokens: getInt("AI_MAX_CONTEXT_TOKENS", 16000),
-		AI_TimeoutMS:        getInt("AI_TIMEOUT_MS", 60000),
-		MCP_Enable:          getBool("MCP_ENABLE", false),
-		MCP_Token:           getEnv("MCP_TOKEN", ""),
+		MCP_Enable: getBool("MCP_ENABLE", false),
+		MCP_Token:  getEnv("MCP_TOKEN", ""),
 	}
 	if dao == nil {
 		return nil

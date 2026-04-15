@@ -13,7 +13,6 @@ services:
       DATABASE_PATH: /app/data/app.db
       WORKERS_DIR: /app/data/workers
       WORKER_RUNNING_TEMP_DIR: /app/data/tmp
-      CHAT_SESSIONS_DIR: /app/data/chat-sessions
       RUNTIME_LIB_DIR: /app/data/.lib
       TZ: ${TZ:-Asia/Shanghai}
       # - ENABLE_CGROUP_V2=true # 启用后，还需要挂载 /sys/fs/cgrou

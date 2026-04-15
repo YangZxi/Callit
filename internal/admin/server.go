@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"callit/internal/admin/chat"
 	"callit/internal/admin/message"
 	"callit/internal/common"
 	"callit/internal/common/snowflake"
@@ -44,7 +43,6 @@ type Server struct {
 	dataDir      string
 	workersDir   string
 	adminToken   string
-	chatHandler  *chat.Handler
 	workerSvc    *WorkerService
 	configMu     sync.RWMutex
 
@@ -90,7 +88,6 @@ func NewEngine(store *db.Store, reg *router.Registry, cronReloader interface{ Re
 		dataDir:      cfg.DataDir,
 		workersDir:   workersDir,
 		adminToken:   cfg.AdminToken,
-		chatHandler:  chat.NewHandler(store, cfg.DataDir, cfg.AppConfig),
 		workerSvc:    NewWorkerService(store, reg, cronReloader, workersDir, workerTmpDir, runtimeLibDir),
 	}
 	e := gin.New()
@@ -130,10 +127,6 @@ func NewEngine(store *db.Store, reg *router.Registry, cronReloader interface{ Re
 		api.POST("/workers/:id/files/update", s.saveFileContent)
 		api.POST("/workers/:id/files/delete", s.deleteFile)
 		api.POST("/workers/:id/files/rename", s.renameFile)
-
-		api.GET("/workers/:id/chat/session", s.chatHandler.GetSession)
-		api.POST("/workers/:id/chat/stream", s.chatHandler.Stream)
-		api.POST("/workers/:id/chat/session/clear", s.chatHandler.ClearSession)
 
 		api.GET("/config", s.AdminGetConfigHandler(cfg))
 		api.POST("/config", s.AdminUpsertConfigHandler(cfg))

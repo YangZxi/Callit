@@ -28,7 +28,6 @@ const logAndOutputSeparator = "\n**=====^=====**\n"
 const (
 	defaultPythonCgroupMemMaxBytes = 64 * 1024 * 1024
 	defaultNodeCgroupMemMaxBytes   = 64 * 1024 * 1024
-	defaultNodeMaxOldSpaceSizeMB   = 64
 	defaultSandboxRlimitFile       = 128
 	fixedPythonCommand             = "python3.10"
 
