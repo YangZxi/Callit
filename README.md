@@ -121,7 +121,7 @@ def handler(ctx):
 ### Node Worker 模板
 
 ```javascript
-function handler(ctx) {
+export default function handler(ctx) {
   const { request } = ctx;
 
   return {

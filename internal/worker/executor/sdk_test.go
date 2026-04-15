@@ -52,4 +52,20 @@ func TestSyncWorkerSDKFilesReplacesOldSDKFiles(t *testing.T) {
 	if !strings.Contains(string(nodeSDKContent), "const { db } = require(\"./db\");") {
 		t.Fatalf("Node SDK 应包含 db 导出，content=%q", string(nodeSDKContent))
 	}
+
+	nodeSDKPackage, err := os.ReadFile(filepath.Join(oldNodeDir, "package.json"))
+	if err != nil {
+		t.Fatalf("读取 Node SDK package.json 失败: %v", err)
+	}
+	if !strings.Contains(string(nodeSDKPackage), "\"import\": \"./index.mjs\"") {
+		t.Fatalf("Node SDK 应提供 ESM 导出，content=%q", string(nodeSDKPackage))
+	}
+
+	nodeESMContent, err := os.ReadFile(filepath.Join(oldNodeDir, "index.mjs"))
+	if err != nil {
+		t.Fatalf("读取 Node SDK index.mjs 失败: %v", err)
+	}
+	if !strings.Contains(string(nodeESMContent), "export const db = cjsModule.db;") {
+		t.Fatalf("Node SDK ESM 入口不正确，content=%q", string(nodeESMContent))
+	}
 }

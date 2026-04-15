@@ -32,10 +32,18 @@ const (
 	defaultSandboxRlimitFile       = 128
 	fixedPythonCommand             = "python3.10"
 
-	sandboxWorkspacePath = "/workspace"
-	sandboxRuntimePath   = "/runtime-lib"
-	sandboxTmpPath       = "/tmp"
-	sandboxDataPath      = "/data"
+	sandboxWorkspacePath           = "/workspace"
+	sandboxWorkspaceNodeModulesDir = "/workspace/node_modules"
+	sandboxRuntimePath             = "/runtime-lib"
+	sandboxTmpPath                 = "/tmp"
+	sandboxDataPath                = "/data"
+)
+
+type nodeModuleType string
+
+const (
+	nodeModuleTypeCommonJS nodeModuleType = "commonjs"
+	nodeModuleTypeESM      nodeModuleType = "module"
 )
 
 // ExecuteResult 表示脚本执行结果。
@@ -232,34 +240,74 @@ func buildSandboxSpec(input sandboxCommandInput) (sandboxSpec, error) {
 		return sandboxSpec{}, err
 	}
 
-	bridgeScript, err := readBridgeScript(input.WorkerSpec.Worker.Runtime)
-	if err != nil {
-		return sandboxSpec{}, err
-	}
-
-	var commandArgs []string
 	switch input.WorkerSpec.Worker.Runtime {
 	case "python":
-		commandArgs = []string{"-c", bridgeScript}
+		return buildPythonSandboxSpec(input, commandPath, workerCodeDir, workerDataDir, runtimePath, workerTmpDir)
 	case "node":
-		commandArgs = []string{
-			// "--max-old-space-size=" + strconv.Itoa(defaultNodeMaxOldSpaceSizeMB),
-			"-e",
-			bridgeScript,
-		}
+		return buildNodeSandboxSpec(input, commandPath, workerCodeDir, workerDataDir, runtimePath, workerTmpDir)
 	default:
 		return sandboxSpec{}, fmt.Errorf("不支持的 runtime: %s", input.WorkerSpec.Worker.Runtime)
 	}
+}
 
+func buildPythonSandboxSpec(input sandboxCommandInput, commandPath string, workerCodeDir string, workerDataDir string, runtimePath string, workerTmpDir string) (sandboxSpec, error) {
+	bridgeScript, err := readBridgeScriptByFilename("python.py")
+	if err != nil {
+		return sandboxSpec{}, err
+	}
+	spec := baseSandboxSpec(input, commandPath, workerCodeDir, workerDataDir, runtimePath, workerTmpDir)
+	spec.CommandArgs = []string{"-c", bridgeScript}
+	return spec, nil
+}
+
+func buildNodeSandboxSpec(input sandboxCommandInput, commandPath string, workerCodeDir string, workerDataDir string, runtimePath string, workerTmpDir string) (sandboxSpec, error) {
+	moduleType, err := detectNodeModuleType(workerCodeDir)
+	if err != nil {
+		return sandboxSpec{}, err
+	}
+	switch moduleType {
+	case nodeModuleTypeESM:
+		return buildNodeSandboxSpecByESM(input, commandPath, workerCodeDir, workerDataDir, runtimePath, workerTmpDir)
+	default:
+		return buildNodeSandboxSpecByCommonJS(input, commandPath, workerCodeDir, workerDataDir, runtimePath, workerTmpDir)
+	}
+}
+
+func buildNodeSandboxSpecByCommonJS(input sandboxCommandInput, commandPath string, workerCodeDir string, workerDataDir string, runtimePath string, workerTmpDir string) (sandboxSpec, error) {
+	bridgeScript, err := readBridgeScriptByFilename("node_cjs.js")
+	if err != nil {
+		return sandboxSpec{}, err
+	}
+	spec := baseSandboxSpec(input, commandPath, workerCodeDir, workerDataDir, runtimePath, workerTmpDir)
+	spec.CommandArgs = []string{"-e", bridgeScript}
+	return spec, nil
+}
+
+func buildNodeSandboxSpecByESM(input sandboxCommandInput, commandPath string, workerCodeDir string, workerDataDir string, runtimePath string, workerTmpDir string) (sandboxSpec, error) {
+	bridgeScript, err := readBridgeScriptByFilename("node_esm.js")
+	if err != nil {
+		return sandboxSpec{}, err
+	}
+	spec := baseSandboxSpec(input, commandPath, workerCodeDir, workerDataDir, runtimePath, workerTmpDir)
+	spec.CommandArgs = []string{"-e", bridgeScript}
+	spec.Mounts = append(spec.Mounts, sandboxMount{
+		Source:      filepath.Join(runtimePath, "node_modules"),
+		Destination: sandboxWorkspaceNodeModulesDir,
+		ReadOnly:    true,
+		IsBind:      true,
+		FSType:      "bind",
+	})
+	return spec, nil
+}
+
+func baseSandboxSpec(input sandboxCommandInput, commandPath string, workerCodeDir string, workerDataDir string, runtimePath string, workerTmpDir string) sandboxSpec {
 	spec := sandboxSpec{
 		CWD:               sandboxWorkspacePath,
 		CommandPath:       commandPath,
-		CommandArgs:       commandArgs,
 		CgroupMemMaxBytes: sandboxCgroupMemMaxBytesByRuntime(input.WorkerSpec.Worker.Runtime),
 		EnableCgroupV2:    input.EnableCgroupV2,
 		RlimitNoFile:      defaultSandboxRlimitFile,
 	}
-
 	spec.Mounts = append(spec.Mounts,
 		sandboxMount{Source: workerCodeDir, Destination: sandboxWorkspacePath, ReadOnly: true, IsBind: true, FSType: "bind"},
 		sandboxMount{Source: workerDataDir, Destination: sandboxDataPath, ReadOnly: false, IsBind: true, FSType: "bind"},
@@ -267,7 +315,6 @@ func buildSandboxSpec(input sandboxCommandInput) (sandboxSpec, error) {
 		sandboxMount{Source: workerTmpDir, Destination: sandboxTmpPath, ReadOnly: false, IsBind: true, FSType: "bind"},
 		sandboxMount{Destination: "/proc", FSType: "proc"},
 	)
-
 	for _, mountPath := range runtimeSupportMountPaths() {
 		if _, statErr := os.Stat(mountPath); statErr != nil {
 			continue
@@ -275,8 +322,7 @@ func buildSandboxSpec(input sandboxCommandInput) (sandboxSpec, error) {
 		spec.Mounts = append(spec.Mounts, sandboxMount{Source: mountPath, Destination: mountPath, ReadOnly: true, IsBind: true, FSType: "bind"})
 	}
 	slog.Debug("构建沙箱挂载配置", "worker_code_dir", workerCodeDir, "worker_data_dir", workerDataDir, "runtime_path", runtimePath, "temp_dir", input.WorkerSpec.WorkerTempDir, "mount_count", len(spec.Mounts))
-
-	return spec, nil
+	return spec
 }
 
 func sandboxCgroupMemMaxBytesByRuntime(runtime string) int64 {
@@ -380,11 +426,19 @@ func buildSandboxCommand(input sandboxCommandInput) (*exec.Cmd, func(), error) {
 	}
 	cmd := exec.CommandContext(input.Parent, nsjailPath, args...)
 	cmd.Dir = input.WorkerSpec.WorkerCodeDir
+	nodeType := nodeModuleTypeCommonJS
+	if input.WorkerSpec.Worker.Runtime == "node" {
+		nodeType, err = detectNodeModuleType(input.WorkerSpec.WorkerCodeDir)
+		if err != nil {
+			return nil, cleanup, err
+		}
+	}
 	cmd.Env = buildSandboxEnv(runtimeDirAbs, input.WorkerSpec.Worker.Runtime, spec.CommandPath, workerEnvConfig{
 		CallitMagicApiBaseURL: fmt.Sprintf("http://127.0.0.1:%d", input.ServerPort),
 		WorkerID:              input.WorkerSpec.Worker.ID,
 		RequestID:             input.RequestID,
 		CustomKV:              parseWorkerEnvPairs(input.WorkerSpec.Worker.Env),
+		NodeModuleType:        nodeType,
 	})
 	return cmd, cleanup, nil
 }
@@ -461,10 +515,14 @@ func readBridgeScript(runtime string) (string, error) {
 	case "python":
 		filename = "python.py"
 	case "node":
-		filename = "node.js"
+		filename = "node_cjs.js"
 	default:
 		return "", fmt.Errorf("不支持的 runtime: %s", runtime)
 	}
+	return readBridgeScriptByFilename(filename)
+}
+
+func readBridgeScriptByFilename(filename string) (string, error) {
 	content, err := workerEntrypointsFS.ReadFile(filepath.ToSlash(filepath.Join("worker_entrypoints", filename)))
 	if err != nil {
 		return "", fmt.Errorf("读取入口脚本失败: %w", err)
@@ -485,6 +543,7 @@ type workerEnvConfig struct {
 	WorkerID              string
 	RequestID             string
 	CustomKV              map[string]string
+	NodeModuleType        nodeModuleType
 }
 
 func buildSandboxEnv(runtimeDir string, runtime string, executablePath string, workerEnv workerEnvConfig) []string {
@@ -518,11 +577,35 @@ func buildSandboxEnv(runtimeDir string, runtime string, executablePath string, w
 
 	switch runtime {
 	case "node":
+		if workerEnv.NodeModuleType == nodeModuleTypeESM {
+			break
+		}
 		envList = appendRuntimeEnvPaths(envList, "NODE_PATH", nodeRuntimeModulePaths(runtimeDir, executablePath))
 	case "python":
 		envList = appendRuntimeEnvPaths(envList, "PYTHONPATH", pythonRuntimeModulePaths(runtimeDir))
 	}
 	return envList
+}
+
+func detectNodeModuleType(workerCodeDir string) (nodeModuleType, error) {
+	packagePath := filepath.Join(workerCodeDir, "package.json")
+	raw, err := os.ReadFile(packagePath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nodeModuleTypeCommonJS, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("读取 Worker package.json 失败: %w", err)
+	}
+	var pkg struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(raw, &pkg); err != nil {
+		return "", fmt.Errorf("解析 Worker package.json 失败: %w", err)
+	}
+	if strings.EqualFold(strings.TrimSpace(pkg.Type), string(nodeModuleTypeESM)) {
+		return nodeModuleTypeESM, nil
+	}
+	return nodeModuleTypeCommonJS, nil
 }
 
 func parseWorkerEnvPairs(envText string) map[string]string {

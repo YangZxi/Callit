@@ -62,6 +62,46 @@ func TestBuildSandboxSpecIncludesWorkerRuntimeAndUploadMounts(t *testing.T) {
 	assertMountExists("/tmp", false, "bind")
 }
 
+func TestBuildSandboxSpecForNodeESMIncludesWorkspaceNodeModulesMount(t *testing.T) {
+	workerRootDir := filepath.Join(t.TempDir(), "workers", "worker-esm")
+	workspaceDir := filepath.Join(workerRootDir, "code")
+	runtimeDir := filepath.Join(t.TempDir(), ".lib")
+	workerRunningTempDir := filepath.Join(t.TempDir(), "req-esm")
+	if err := os.MkdirAll(filepath.Join(workspaceDir), 0o755); err != nil {
+		t.Fatalf("创建 Worker 目录失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspaceDir, "package.json"), []byte("{\n  \"type\": \"module\"\n}\n"), 0o644); err != nil {
+		t.Fatalf("写入 package.json 失败: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(runtimeDir, "node", "node_modules"), 0o755); err != nil {
+		t.Fatalf("创建 runtime 依赖目录失败: %v", err)
+	}
+	if err := os.MkdirAll(workerRunningTempDir, 0o755); err != nil {
+		t.Fatalf("创建运行时目录失败: %v", err)
+	}
+
+	spec, err := buildSandboxSpec(sandboxCommandInput{
+		Parent: context.Background(),
+		WorkerSpec: mustNewRuntimeWorkerSpec(t,
+			filepath.Join(filepath.Dir(workerRootDir)),
+			filepath.Dir(workerRunningTempDir),
+			runtimeDir,
+			model.Worker{ID: "worker-esm", Runtime: "node", TimeoutMS: 5000},
+			filepath.Base(workerRunningTempDir),
+		),
+	})
+	if err != nil {
+		t.Fatalf("构建沙箱配置失败: %v", err)
+	}
+
+	for _, mount := range spec.Mounts {
+		if mount.Destination == "/workspace/node_modules" && mount.Source == filepath.Join(runtimeDir, "node", "node_modules") {
+			return
+		}
+	}
+	t.Fatalf("ESM 模式应挂载 /workspace/node_modules，实际=%#v", spec.Mounts)
+}
+
 func mustNewRuntimeWorkerSpec(t *testing.T, workersDir string, workerTempBaseDir string, runtimeLibDir string, workerModel model.Worker, requestID string) worker.WorkerSpec {
 	t.Helper()
 	spec, err := worker.NewRuntimeWorkerSpec(workersDir, workerTempBaseDir, runtimeLibDir, workerModel, requestID)
@@ -125,6 +165,18 @@ func TestBuildSandboxEnvForNode(t *testing.T) {
 	}, string(os.PathListSeparator))
 	if nodePath != want {
 		t.Fatalf("NODE_PATH 不正确，got=%q want=%q", nodePath, want)
+	}
+}
+
+func TestBuildSandboxEnvForNodeESMDoesNotSetNodePath(t *testing.T) {
+	envList := buildSandboxEnv("/data/.lib", "node", "/usr/bin/node", workerEnvConfig{
+		NodeModuleType: nodeModuleTypeESM,
+	})
+
+	for _, item := range envList {
+		if strings.HasPrefix(item, "NODE_PATH=") {
+			t.Fatalf("ESM 模式不应设置 NODE_PATH，env=%v", envList)
+		}
 	}
 }
 
@@ -348,7 +400,7 @@ module.exports = { handler };
 		t.Fatalf("写入 main.js 失败: %v", err)
 	}
 
-	cmd := exec.Command("node", filepath.Join(currentDir, "worker_entrypoints", "node.js"))
+	cmd := exec.Command("node", filepath.Join(currentDir, "worker_entrypoints", "node_cjs.js"))
 	cmd.Dir = workerDir
 	cmd.Env = append(os.Environ(), "NODE_PATH="+filepath.Join(currentDir, "..", "..", "..", "data", ".lib", "node", "node_modules"))
 	cmd.Stdin = strings.NewReader(`{"request":{"method":"GET","uri":"/","url":"http://127.0.0.1/"}}`)
@@ -407,7 +459,7 @@ module.exports = { handler };
 		t.Fatalf("写入 main.js 失败: %v", err)
 	}
 
-	cmd := exec.Command("node", filepath.Join(currentDir, "worker_entrypoints", "node.js"))
+	cmd := exec.Command("node", filepath.Join(currentDir, "worker_entrypoints", "node_cjs.js"))
 	cmd.Dir = workerDir
 	cmd.Env = append(os.Environ(), "NODE_PATH="+filepath.Join(currentDir, "..", "..", "..", "data", ".lib", "node", "node_modules"))
 	cmd.Stdin = strings.NewReader(`{"request":{"method":"GET","uri":"/","url":"http://127.0.0.1/"}}`)
@@ -425,5 +477,153 @@ module.exports = { handler };
 	}
 	if !strings.Contains(rawOutput[startIdx:endIdx], "Error: boom") {
 		t.Fatalf("错误日志未落在日志分隔符内，output=%q", rawOutput)
+	}
+}
+
+func TestDetectNodeModuleType(t *testing.T) {
+	workerDir := t.TempDir()
+
+	got, err := detectNodeModuleType(workerDir)
+	if err != nil {
+		t.Fatalf("未配置 package.json 时不应报错: %v", err)
+	}
+	if got != nodeModuleTypeCommonJS {
+		t.Fatalf("默认应为 CommonJS，got=%q", got)
+	}
+
+	if err := os.WriteFile(filepath.Join(workerDir, "package.json"), []byte("{\n  \"type\": \"module\"\n}\n"), 0o644); err != nil {
+		t.Fatalf("写入 package.json 失败: %v", err)
+	}
+	got, err = detectNodeModuleType(workerDir)
+	if err != nil {
+		t.Fatalf("合法 package.json 不应报错: %v", err)
+	}
+	if got != nodeModuleTypeESM {
+		t.Fatalf("type=module 应识别为 ESM，got=%q", got)
+	}
+}
+
+func TestDetectNodeModuleTypeRejectsInvalidPackageJSON(t *testing.T) {
+	workerDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workerDir, "package.json"), []byte("{"), 0o644); err != nil {
+		t.Fatalf("写入 package.json 失败: %v", err)
+	}
+
+	_, err := detectNodeModuleType(workerDir)
+	if err == nil {
+		t.Fatalf("非法 package.json 应返回错误")
+	}
+	if !strings.Contains(err.Error(), "package.json") {
+		t.Fatalf("错误信息应包含 package.json，got=%v", err)
+	}
+}
+
+func TestNodeESMEntrypointSupportsDefaultExportAndImports(t *testing.T) {
+	workerDir := t.TempDir()
+	currentDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("获取当前目录失败: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(workerDir, "package.json"), []byte("{\n  \"type\": \"module\"\n}\n"), 0o644); err != nil {
+		t.Fatalf("写入 package.json 失败: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(workerDir, "lib"), 0o755); err != nil {
+		t.Fatalf("创建 lib 目录失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workerDir, "lib", "helper.js"), []byte("export function pickMessage() { return 'esm-ok'; }\n"), 0o644); err != nil {
+		t.Fatalf("写入 helper.js 失败: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(workerDir, "node_modules", "axios"), 0o755); err != nil {
+		t.Fatalf("创建 axios 目录失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workerDir, "node_modules", "axios", "package.json"), []byte("{\n  \"name\": \"axios\",\n  \"type\": \"module\",\n  \"exports\": \"./index.js\"\n}\n"), 0o644); err != nil {
+		t.Fatalf("写入 axios package.json 失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workerDir, "node_modules", "axios", "index.js"), []byte("export default { name: 'axios-stub' };\n"), 0o644); err != nil {
+		t.Fatalf("写入 axios index.js 失败: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(currentDir, "..", "..", "..", "resources", "worker_sdk", "node", "callit"), filepath.Join(workerDir, "node_modules", "callit")); err != nil {
+		t.Fatalf("创建 callit SDK 链接失败: %v", err)
+	}
+
+	mainJS := strings.TrimSpace(`
+import axios from "axios";
+import { kv, db } from "callit";
+import { pickMessage } from "./lib/helper.js";
+
+export default async function handler(ctx) {
+  return {
+    status: 200,
+    body: {
+      message: pickMessage(),
+      axiosName: axios.name,
+      hasKV: typeof kv?.newClient === "function",
+      hasDB: typeof db?.newClient === "function",
+      method: ctx.request.method
+    }
+  };
+}
+`)
+	if err := os.WriteFile(filepath.Join(workerDir, "main.js"), []byte(mainJS), 0o644); err != nil {
+		t.Fatalf("写入 main.js 失败: %v", err)
+	}
+
+	cmd := exec.Command("node", filepath.Join(currentDir, "worker_entrypoints", "node_esm.js"))
+	cmd.Dir = workerDir
+	cmd.Stdin = strings.NewReader(`{"request":{"method":"GET","uri":"/","url":"http://127.0.0.1/"}}`)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("执行 node esm worker entrypoint 失败: %v, output=%s", err, string(output))
+	}
+
+	_, resultOutput, err := splitBridgeOutput(string(output))
+	if err != nil {
+		t.Fatalf("splitBridgeOutput 失败: %v, output=%s", err, string(output))
+	}
+
+	wantParts := []string{
+		`"message":"esm-ok"`,
+		`"axiosName":"axios-stub"`,
+		`"hasKV":true`,
+		`"hasDB":true`,
+		`"method":"GET"`,
+	}
+	for _, part := range wantParts {
+		if !strings.Contains(resultOutput, part) {
+			t.Fatalf("ESM 结果缺少 %q，got=%s", part, resultOutput)
+		}
+	}
+}
+
+func TestNodeESMEntrypointSupportsNamedHandlerExport(t *testing.T) {
+	workerDir := t.TempDir()
+	currentDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("获取当前目录失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workerDir, "package.json"), []byte("{\n  \"type\": \"module\"\n}\n"), 0o644); err != nil {
+		t.Fatalf("写入 package.json 失败: %v", err)
+	}
+	mainJS := "export function handler(ctx) { return { status: 200, body: { uri: ctx.request.uri } }; }\n"
+	if err := os.WriteFile(filepath.Join(workerDir, "main.js"), []byte(mainJS), 0o644); err != nil {
+		t.Fatalf("写入 main.js 失败: %v", err)
+	}
+
+	cmd := exec.Command("node", filepath.Join(currentDir, "worker_entrypoints", "node_esm.js"))
+	cmd.Dir = workerDir
+	cmd.Stdin = strings.NewReader(`{"request":{"method":"GET","uri":"/named","url":"http://127.0.0.1/named"}}`)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("执行 node esm worker entrypoint 失败: %v, output=%s", err, string(output))
+	}
+
+	_, resultOutput, err := splitBridgeOutput(string(output))
+	if err != nil {
+		t.Fatalf("splitBridgeOutput 失败: %v, output=%s", err, string(output))
+	}
+	if !strings.Contains(resultOutput, `"uri":"/named"`) {
+		t.Fatalf("命名导出结果不正确，got=%s", resultOutput)
 	}
 }
