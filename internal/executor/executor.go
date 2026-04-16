@@ -397,6 +397,7 @@ func buildNsJailArgs(configPath string, spec sandboxSpec, timeLimit int) []strin
 		"--rlimit_cpu", strconv.Itoa(spec.RlimitCPUSec),
 		"--rlimit_nofile", strconv.Itoa(spec.RlimitNoFile),
 		"--time_limit", strconv.Itoa(timeLimit),
+		"--disable_rlimits",
 		"--",
 		spec.CommandPath,
 	)
