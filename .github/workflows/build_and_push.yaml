@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version_name:
-        description: "手动发布的版本标签，例如 v1.0.0"
+        description: "手动发布的版本标签，例如 1.0.0"
         required: false
         type: string
 
