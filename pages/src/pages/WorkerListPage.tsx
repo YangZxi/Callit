@@ -320,7 +320,10 @@ export default function WorkerListPage() {
                     title={item.route}
                     onClick={(e) => {
                       e.stopPropagation();
-                      const fullUrl = `${window.location.origin}${item.route}`;
+                      let fullUrl = `${window.location.origin}${item.route}`;
+                      if (fullUrl.endsWith("/*")) {
+                        fullUrl = fullUrl.slice(0, -1);
+                      }
                       void copyText(fullUrl);
                       toast.success("地址已复制");
                     }}

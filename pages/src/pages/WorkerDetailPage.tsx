@@ -92,7 +92,11 @@ export default function WorkerDetailPage() {
   const selectedKeys = useMemo(() => (selectedFile ? new Set<string>([selectedFile]) : new Set<string>()), [selectedFile]);
   const defaultRunUrl = useMemo(() => {
     if (!workerInfo) return "";
-    return `${window.location.protocol}//${window.location.host}${workerInfo.route}`;
+    let fullUrl = `${window.location.origin}${workerInfo.route}`;
+    if (fullUrl.endsWith("/*")) {
+      fullUrl = fullUrl.slice(0, -1);
+    }
+    return fullUrl;
   }, [workerInfo]);
   const isDiffMode = activeDiffFile !== "";
   const logTotalPages = useMemo(() => Math.max(1, Math.ceil(logTotal / workerLogsPageSize)), [logTotal]);
