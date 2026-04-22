@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"callit/internal/admin/message"
 	"callit/internal/config"
@@ -97,6 +98,26 @@ func doAdminJSONRequest(t *testing.T, engine http.Handler, method string, path s
 	req := httptest.NewRequest(method, path, bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer test-token")
+
+	resp := httptest.NewRecorder()
+	engine.ServeHTTP(resp, req)
+	return resp
+}
+
+func doAdminJSONRequestWithoutAuth(t *testing.T, engine http.Handler, method string, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+
+	var payload []byte
+	var err error
+	if body != nil {
+		payload, err = json.Marshal(body)
+		if err != nil {
+			t.Fatalf("序列化请求体失败: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(method, path, bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
 
 	resp := httptest.NewRecorder()
 	engine.ServeHTTP(resp, req)
@@ -212,6 +233,140 @@ func TestListWorkersSupportsKeywordFilter(t *testing.T) {
 	}
 	if len(body.Data) != 3 {
 		t.Fatalf("空 keyword 应返回全部 worker: got=%d data=%#v", len(body.Data), body.Data)
+	}
+}
+
+func TestDashboardMetricsAPIRequiresAuthAndReturnsData(t *testing.T) {
+	store := openAdminTestStore(t)
+	createAdminTestWorker(t, store, "worker-dashboard-metrics")
+
+	cfg := config.Config{
+		AdminPrefix: "/admin",
+		AdminToken:  "test-token",
+		DataDir:     t.TempDir(),
+	}
+	engine := NewEngine(store, router.New(), nil, &cfg)
+
+	unauthResp := doAdminJSONRequestWithoutAuth(t, engine, http.MethodGet, "/admin/api/dashboard/metrics", nil)
+	if unauthResp.Code != http.StatusUnauthorized {
+		t.Fatalf("未认证访问 dashboard metrics 应返回 401: code=%d body=%s", unauthResp.Code, unauthResp.Body.String())
+	}
+
+	resp := doAdminJSONRequest(t, engine, http.MethodGet, "/admin/api/dashboard/metrics", nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("dashboard metrics 接口应返回 200: code=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var body struct {
+		Data message.DashboardMetricsResponse `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("解析 dashboard metrics 响应失败: %v", err)
+	}
+	if body.Data.Workers.Total != 1 || body.Data.Workers.Enabled != 1 {
+		t.Fatalf("dashboard metrics Worker 数量不正确: %#v", body.Data.Workers)
+	}
+}
+
+func TestDashboardWorkerTrendAPI(t *testing.T) {
+	store := openAdminTestStore(t)
+	createAdminTestWorker(t, store, "worker-dashboard-trend")
+
+	cfg := config.Config{
+		AdminPrefix: "/admin",
+		AdminToken:  "test-token",
+		DataDir:     t.TempDir(),
+	}
+	engine := NewEngine(store, router.New(), nil, &cfg)
+
+	resp := doAdminJSONRequest(t, engine, http.MethodGet, "/admin/api/dashboard/workers/trend?worker_id=all", nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("dashboard trend 接口应返回 200: code=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var body struct {
+		Data []message.DashboardWorkerTrendPoint `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("解析 dashboard trend 响应失败: %v", err)
+	}
+	if len(body.Data) != 24 {
+		t.Fatalf("dashboard trend 应返回 24 个点，实际 %d", len(body.Data))
+	}
+
+	notFoundResp := doAdminJSONRequest(t, engine, http.MethodGet, "/admin/api/dashboard/workers/trend?worker_id=not-exist", nil)
+	if notFoundResp.Code != http.StatusNotFound {
+		t.Fatalf("不存在 Worker 的 trend 查询应返回 404: code=%d body=%s", notFoundResp.Code, notFoundResp.Body.String())
+	}
+}
+
+func TestDashboardAPIIgnoresDeletedWorkerLogs(t *testing.T) {
+	store := openAdminTestStore(t)
+	createAdminTestWorker(t, store, "worker-dashboard-active")
+	createAdminTestWorker(t, store, "worker-dashboard-deleted")
+
+	now := time.Now().UTC()
+	if err := store.WorkerLog.Insert(context.Background(), model.WorkerLog{
+		WorkerID:   "worker-dashboard-active",
+		RequestID:  "active-success",
+		Status:     http.StatusOK,
+		DurationMS: 100,
+		CreatedAt:  now.Add(-10 * time.Minute),
+	}); err != nil {
+		t.Fatalf("写入当前 Worker 日志失败: %v", err)
+	}
+	if err := store.WorkerLog.Insert(context.Background(), model.WorkerLog{
+		WorkerID:   "worker-dashboard-deleted",
+		RequestID:  "deleted-failed",
+		Status:     http.StatusInternalServerError,
+		DurationMS: 900,
+		CreatedAt:  now.Add(-5 * time.Minute),
+	}); err != nil {
+		t.Fatalf("写入已删除 Worker 日志失败: %v", err)
+	}
+	if err := store.Worker.Delete(context.Background(), "worker-dashboard-deleted"); err != nil {
+		t.Fatalf("删除测试 Worker 失败: %v", err)
+	}
+
+	cfg := config.Config{
+		AdminPrefix: "/admin",
+		AdminToken:  "test-token",
+		DataDir:     t.TempDir(),
+	}
+	engine := NewEngine(store, router.New(), nil, &cfg)
+
+	metricsResp := doAdminJSONRequest(t, engine, http.MethodGet, "/admin/api/dashboard/metrics", nil)
+	if metricsResp.Code != http.StatusOK {
+		t.Fatalf("dashboard metrics 接口应返回 200: code=%d body=%s", metricsResp.Code, metricsResp.Body.String())
+	}
+	var metricsBody struct {
+		Data message.DashboardMetricsResponse `json:"data"`
+	}
+	if err := json.Unmarshal(metricsResp.Body.Bytes(), &metricsBody); err != nil {
+		t.Fatalf("解析 dashboard metrics 响应失败: %v", err)
+	}
+	if metricsBody.Data.Summary.TotalCalls24h != 1 || metricsBody.Data.Summary.FailedCalls24h != 0 {
+		t.Fatalf("metrics 不应统计已删除 Worker 日志: %#v", metricsBody.Data.Summary)
+	}
+
+	trendResp := doAdminJSONRequest(t, engine, http.MethodGet, "/admin/api/dashboard/workers/trend?worker_id=all", nil)
+	if trendResp.Code != http.StatusOK {
+		t.Fatalf("dashboard trend 接口应返回 200: code=%d body=%s", trendResp.Code, trendResp.Body.String())
+	}
+	var trendBody struct {
+		Data []message.DashboardWorkerTrendPoint `json:"data"`
+	}
+	if err := json.Unmarshal(trendResp.Body.Bytes(), &trendBody); err != nil {
+		t.Fatalf("解析 dashboard trend 响应失败: %v", err)
+	}
+	total := 0
+	failed := 0
+	for _, point := range trendBody.Data {
+		total += point.Total
+		failed += point.Failed
+	}
+	if total != 1 || failed != 0 {
+		t.Fatalf("trend 不应统计已删除 Worker 日志: total=%d failed=%d data=%#v", total, failed, trendBody.Data)
 	}
 }
 

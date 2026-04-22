@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import Navbar from "./components/navbar";
 import Footer from "./components/footer";
 import HomePage from "./pages/HomePage";
+import DashboardPage from "./pages/DashboardPage";
 import WorkerListPage from "./pages/WorkerListPage";
 import WorkerDetailPage from "./pages/WorkerDetailPage";
 import DependenciesPage from "./pages/DependenciesPage";
@@ -53,6 +54,7 @@ function App() {
     >
       <Routes>
         <Route path={`${PREFIX}/`} element={<HomePage />} />
+        <Route path={`${PREFIX}/dashboard`} element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path={`${PREFIX}/workers`} element={<ProtectedRoute><WorkerListPage /></ProtectedRoute>} />
         <Route path={`${PREFIX}/workers/:id`} element={<ProtectedRoute><WorkerDetailPage /></ProtectedRoute>} />
         <Route path={`${PREFIX}/dependencies`} element={<ProtectedRoute><DependenciesPage /></ProtectedRoute>} />

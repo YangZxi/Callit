@@ -482,9 +482,6 @@ export default function WorkerListPage() {
         isOpen={cronModalOpen}
         scrollBehavior="inside"
         size="sm"
-        // classNames={{
-        //   body: "mx-[30px]"
-        // }}
         onOpenChange={(open) => {
           setCronModalOpen(open);
           if (!open) {

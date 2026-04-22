@@ -22,3 +22,11 @@ type WorkerLog struct {
 func (WorkerLog) TableName() string {
 	return "worker_run_log"
 }
+
+func (log WorkerLog) IsSuccess() bool {
+	return log.Error == "" && log.Status >= 200 && log.Status < 500
+}
+
+func (log WorkerLog) IsServerError() bool {
+	return log.Error != "" || (log.Status >= 500 && log.Status < 600)
+}
