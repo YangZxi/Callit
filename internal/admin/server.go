@@ -44,6 +44,7 @@ type Server struct {
 	workersDir   string
 	adminToken   string
 	workerSvc    *WorkerService
+	dashboardSvc *DashboardService
 	configMu     sync.RWMutex
 
 	dependencyTaskMu      sync.Mutex
@@ -89,6 +90,7 @@ func NewEngine(store *db.Store, reg *router.Registry, cronReloader interface{ Re
 		workersDir:   workersDir,
 		adminToken:   cfg.AdminToken,
 		workerSvc:    NewWorkerService(store, reg, cronReloader, workersDir, workerTmpDir, runtimeLibDir),
+		dashboardSvc: NewDashboardService(store),
 	}
 	e := gin.New()
 	e.Use(gin.Recovery(), common.RequestIDMiddleware())
@@ -114,6 +116,9 @@ func NewEngine(store *db.Store, reg *router.Registry, cronReloader interface{ Re
 		api.POST("/workers/delete", s.deleteWorker)
 		api.POST("/workers/enable", s.enableWorker)
 		api.POST("/workers/disable", s.disableWorker)
+
+		api.GET("/dashboard/metrics", s.getDashboardMetrics)
+		api.GET("/dashboard/workers/trend", s.getDashboardWorkerTrend)
 
 		api.GET("/workers/:id/logs", s.listWorkerLogs)
 		api.GET("/workers/:id/crons", s.listWorkerCrons)
@@ -330,6 +335,29 @@ func (s *Server) getWorker(c *gin.Context) {
 		return
 	}
 	apiSuccess(c, worker)
+}
+
+func (s *Server) getDashboardMetrics(c *gin.Context) {
+	data, err := s.dashboardSvc.Metrics(c.Request.Context())
+	if err != nil {
+		apiError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	apiSuccess(c, data)
+}
+
+func (s *Server) getDashboardWorkerTrend(c *gin.Context) {
+	workerID := strings.TrimSpace(c.Query("worker_id"))
+	data, err := s.dashboardSvc.WorkerTrend(c.Request.Context(), workerID)
+	if err != nil {
+		if errors.Is(err, ErrWorkerNotFound) {
+			apiError(c, http.StatusNotFound, "函数不存在")
+			return
+		}
+		apiError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	apiSuccess(c, data)
 }
 
 func (s *Server) listWorkerLogs(c *gin.Context) {
