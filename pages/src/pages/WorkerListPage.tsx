@@ -463,7 +463,7 @@ export default function WorkerListPage() {
               onValueChange={(value) => setForm((prev) => ({ ...prev, timeoutMS: value }))}
             />
           </div>
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1 mb-1">
             <Label htmlFor="worker-env">环境变量</Label>
             <TextArea
               id="worker-env"
