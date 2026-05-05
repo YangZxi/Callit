@@ -45,6 +45,11 @@ const initialForm: CreateWorkerForm = {
   enabled: true,
 };
 
+function formatMillisecondsToSeconds(ms: number): string {
+  const seconds = Math.round(ms / 100) / 10;
+  return Number.isInteger(seconds) ? String(seconds) : seconds.toFixed(1);
+}
+
 function isValidWorkerRoute(route: string): boolean {
   if (!route.startsWith("/")) {
     return false;
@@ -70,6 +75,7 @@ export default function WorkerListPage() {
   const [actioningID, setActioningID] = useState<string>("");
   const [workers, setWorkers] = useState<WorkerItem[]>([]);
   const [form, setForm] = useState<CreateWorkerForm>(initialForm);
+  const [timeoutSeconds, setTimeoutSeconds] = useState(() => formatMillisecondsToSeconds(Number(initialForm.timeoutMS)));
   const [cronModalOpen, setCronModalOpen] = useState(false);
   const [cronWorker, setCronWorker] = useState<WorkerItem | null>(null);
   const [keyword, setKeyword] = useState("");
@@ -100,9 +106,28 @@ export default function WorkerListPage() {
     void loadWorkers("");
   }, []);
 
+  const updateTimeoutSeconds = (value: string) => {
+    setTimeoutSeconds(value);
+    const timeoutSValue = value.trim();
+    if (!/^\d+(?:\.\d)?$/.test(timeoutSValue)) {
+      return;
+    }
+
+    const seconds = Number(timeoutSValue);
+    if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 300) {
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      timeoutMS: String(Math.round(seconds * 1000)),
+    }));
+  };
+
   const submitForm = async () => {
     if (creating) return;
-    const timeout = Number(form.timeoutMS);
+    const timeoutMS = Number(form.timeoutMS);
+    const timeoutSeconds = timeoutMS / 1000;
 
     if (!form.name.trim()) {
       toast.warning("name 不能为空");
@@ -124,8 +149,8 @@ export default function WorkerListPage() {
       toast.warning("route 使用通配符时只支持结尾 /* 形式");
       return;
     }
-    if (!Number.isFinite(timeout) || timeout <= 0) {
-      toast.warning("timeout_ms 必须大于 0");
+    if (!Number.isFinite(timeoutMS) || timeoutMS <= 0 || timeoutSeconds > 300) {
+      toast.warning("超时必须大于 0 秒且不能超过 300 秒");
       return;
     }
     setCreating(true);
@@ -136,7 +161,7 @@ export default function WorkerListPage() {
           description: form.description.trim(),
           runtime: form.runtime,
           route: form.route.trim(),
-          timeout_ms: timeout,
+          timeout_ms: timeoutMS,
           env: normalizeEnvInput(form.env),
           enabled: form.enabled,
         });
@@ -146,12 +171,13 @@ export default function WorkerListPage() {
           name: form.name.trim(),
           description: form.description.trim(),
           route: form.route.trim(),
-          timeout_ms: timeout,
+          timeout_ms: timeoutMS,
           env: normalizeEnvInput(form.env),
           enabled: form.enabled,
         });
       }
       setForm(initialForm);
+      setTimeoutSeconds(formatMillisecondsToSeconds(Number(initialForm.timeoutMS)));
       setModalMode("create");
       setEditingID("");
       setIsOpen(false);
@@ -165,6 +191,7 @@ export default function WorkerListPage() {
     setModalMode("create");
     setEditingID("");
     setForm(initialForm);
+    setTimeoutSeconds(formatMillisecondsToSeconds(Number(initialForm.timeoutMS)));
     setIsOpen(true);
   };
 
@@ -180,6 +207,7 @@ export default function WorkerListPage() {
       env: item.env || "",
       enabled: item.enabled,
     });
+    setTimeoutSeconds(formatMillisecondsToSeconds(item.timeout_ms));
     setIsOpen(true);
   };
 
@@ -456,11 +484,12 @@ export default function WorkerListPage() {
             />
             <Input
               isRequired
-              label="超时(ms)"
+              label="超时(秒)"
               name="worker-timeout"
               type="number"
-              value={form.timeoutMS}
-              onValueChange={(value) => setForm((prev) => ({ ...prev, timeoutMS: value }))}
+              step="0.1"
+              value={timeoutSeconds}
+              onValueChange={updateTimeoutSeconds}
             />
           </div>
           <div className="flex flex-col gap-1 mb-1">
