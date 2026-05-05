@@ -8,6 +8,7 @@ type InputProps = {
 	value?: string;
 	name?: string;
 	type?: React.HTMLInputTypeAttribute;
+	step?: number | string;
 	className?: string;
 	maxLength?: number;
 	isRequired?: boolean;
@@ -28,6 +29,7 @@ export default function Input({
 	value,
 	name,
 	type = "text",
+	step,
 	className,
 	maxLength,
 	isRequired,
@@ -59,6 +61,7 @@ export default function Input({
 				disabled={isDisabled}
 				maxLength={maxLength}
 				placeholder={placeholder}
+				step={step}
 				value={value}
 				onKeyDown={onKeyDown}
 				onChange={(event) => onValueChange?.(event.target.value)}
