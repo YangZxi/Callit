@@ -279,8 +279,8 @@ func TestBuildSandboxEnvIncludesWorkerCustomEnv(t *testing.T) {
 }
 
 func TestParseWorkerEnvPairs(t *testing.T) {
-	parsed := parseWorkerEnvPairs(" API_KEY = test ;\nREGION=us \nINVALID\n=empty;A=B=C")
-	if len(parsed) != 3 {
+	parsed := parseWorkerEnvPairs(" API_KEY = test \r\nREGION=us \nINVALID\n=empty\nA=B=C\nCOOKIE=foo=bar;hello=world")
+	if len(parsed) != 4 {
 		t.Fatalf("解析结果数量不正确: %#v", parsed)
 	}
 	if parsed["API_KEY"] != "test" {
@@ -291,6 +291,9 @@ func TestParseWorkerEnvPairs(t *testing.T) {
 	}
 	if parsed["A"] != "B=C" {
 		t.Fatalf("A 解析失败: %#v", parsed)
+	}
+	if parsed["COOKIE"] != "foo=bar;hello=world" {
+		t.Fatalf("COOKIE 解析失败: %#v", parsed)
 	}
 }
 

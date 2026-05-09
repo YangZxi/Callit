@@ -28,3 +28,7 @@ services:
     image: redis:7-alpine
     container_name: callit-redis
     restart: unless-stopped
+    volumes:
+      - ./redis-data:/data
+    sysctls:
+      vm.overcommit_memory: "1"

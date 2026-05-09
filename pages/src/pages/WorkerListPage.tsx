@@ -84,10 +84,10 @@ export default function WorkerListPage() {
 
   const normalizeEnvInput = (value: string): string => {
     return value
-      .split(/[\n;]/)
+      .split(/\r\n|\n|\r/)
       .map((item) => item.trim())
       .filter((item) => item.length > 0)
-      .join(";");
+      .join("\n");
   };
 
   const loadWorkers = async (searchKeyword: string = keyword) => {
@@ -493,12 +493,12 @@ export default function WorkerListPage() {
             />
           </div>
           <div className="flex flex-col gap-1 mb-1">
-            <Label htmlFor="worker-env">环境变量</Label>
+            <Label htmlFor="worker-env">环境变量(多个以换行分隔)</Label>
             <TextArea
               id="worker-env"
               className="w-full"
               rows={3}
-              placeholder="KEY=value;KEY2=value2;..."
+              placeholder="KEY=value\nKEY2=value2\n..."
               value={form.env}
               onChange={(event) => setForm((prev) => ({ ...prev, env: event.target.value }))}
             />

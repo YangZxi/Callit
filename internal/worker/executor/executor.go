@@ -609,9 +609,8 @@ func detectNodeModuleType(workerCodeDir string) (nodeModuleType, error) {
 }
 
 func parseWorkerEnvPairs(envText string) map[string]string {
-	entries := strings.FieldsFunc(envText, func(r rune) bool {
-		return r == ';' || r == '\n'
-	})
+	envText = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(envText)
+	entries := strings.Split(envText, "\n")
 	envMap := make(map[string]string, len(entries))
 	for _, item := range entries {
 		raw := strings.TrimSpace(item)
@@ -626,7 +625,15 @@ func parseWorkerEnvPairs(envText string) map[string]string {
 		if key == "" {
 			continue
 		}
-		envMap[key] = strings.TrimSpace(value)
+		value = strings.TrimSpace(value)
+		if len(value) >= 2 {
+			if value[0] == '"' && value[len(value)-1] == '"' {
+				value = value[1 : len(value)-1]
+			} else if value[0] == '\'' && value[len(value)-1] == '\'' {
+				value = value[1 : len(value)-1]
+			}
+		}
+		envMap[key] = value
 	}
 	return envMap
 }

@@ -143,15 +143,15 @@ export default function handler(ctx) {
 - 主文件中必须定义 `handler(ctx)`，通过 ctx 对象获取请求信息、上下文等信息
 - 通过返回 JSON 结构化数据来控制 HTTP 响应的状态码、响应体和响应头
 - 具体文档与样例请参考 [Worker 文档](./docs/worker_introduction.md)
-- Worker 的内部 KV 能力通过本机 `magic-api` 服务提供，默认监听 `127.0.0.1:31001`，仅供 Worker 运行时调用
+- Worker 的内部 KV、DB 能力通过本机 `magic-api` 服务提供，监听 `127.0.0.1:31001`，仅供 Worker 运行时调用，请勿在 Docker 中暴露该端口
 
 
 ## 技术栈
 
-- Backend: Go + Gin
-- Frontend: React + Vite + HeroUI
-- Database: SQLite3
-- Runtime: Python3 / Node.js
+- 后端: Go、Gin
+- 前端: pnpm、React、Vite、HeroUI
+- 数据库: SQLite3、Redis
+- Worker 运行环境: Python3、Node.js@22
 
 
 ## 二次开发
@@ -183,23 +183,15 @@ docker compose -f docker-compose.dev.yml up --build
 
 - `data/app.db`：SQLite 数据库
 - `data/workers/<worker_id>/`：Worker 文件目录
-- `data/tmp/<request_id>/`：上传文件临时目录，请求结束后自动清理，根目录可由 `WORKER_RUNNING_TEMP_DIR` 配置
+- `data/tmp/<request_id>/`：上传文件临时目录，单次请求结束后自动清理
 - `data/.lib/<runtime>/`：运行时全局依赖目录
 - `public/`：Admin 前端构建产物目录
-
-## 常见使用场景
-
-- 编写 JSON API
-- 上传文件后做解析或处理
-- 生成并返回文件
-- 返回 HTML 页面
-- 使用第三方依赖扩展 Worker 能力
 
 
 ## 常见问题
 ### docker compose 启动时提示'Error response from daemon: invalid --security-opt 2: "systempaths=unconfined"'
 大部分原因都是 Docker Compose 版本太低了，比如使用 apt 安装的 Docker  
-一下提供两个解决方案：
+以下提供两个解决方案：
 1. 升级 Docker 和 Docker Compose 到最新版本  
 使用官方源重新安装最新的 Docker（新版 Docker 中包含 compose 命令），https://docs.docker.com/engine/install/debian/  
 跟随官方指导重新安装 Docker  

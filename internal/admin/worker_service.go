@@ -202,9 +202,8 @@ func (s *WorkerService) UpdateWorker(ctx context.Context, input UpdateWorkerInpu
 }
 
 func normalizeWorkerEnv(envText string) string {
-	items := strings.FieldsFunc(envText, func(r rune) bool {
-		return r == ';' || r == '\n'
-	})
+	envText = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(envText)
+	items := strings.Split(envText, "\n")
 	normalized := make([]string, 0, len(items))
 	for _, item := range items {
 		trimmed := strings.TrimSpace(item)
@@ -213,7 +212,7 @@ func normalizeWorkerEnv(envText string) string {
 		}
 		normalized = append(normalized, trimmed)
 	}
-	return strings.Join(normalized, ";")
+	return strings.Join(normalized, "\n")
 }
 
 func (s *WorkerService) ListWorkerFiles(ctx context.Context, id string) ([]string, error) {

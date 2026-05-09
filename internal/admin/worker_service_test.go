@@ -83,3 +83,11 @@ func TestMainFilenameByRuntimeForNode(t *testing.T) {
 		t.Fatalf("node runtime 主文件名不正确，got=%q", got)
 	}
 }
+
+func TestNormalizeWorkerEnvUsesSingleNewlineAndKeepsSemicolonInValue(t *testing.T) {
+	normalized := normalizeWorkerEnv(" API_KEY=test \r\n\r\n QQ_MUSIC_COOKIE=uin=o1282381264;wxuin=;euin=abc \n\n REGION=us \r\n")
+	want := "API_KEY=test\nQQ_MUSIC_COOKIE=uin=o1282381264;wxuin=;euin=abc\nREGION=us"
+	if normalized != want {
+		t.Fatalf("环境变量规范化结果不正确，got=%q want=%q", normalized, want)
+	}
+}
