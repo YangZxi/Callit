@@ -2,23 +2,23 @@ package message
 
 // CreateWorkerRequest 表示创建 Worker 的请求体。
 type CreateWorkerRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Runtime     string `json:"runtime"`
-	Route       string `json:"route"`
-	TimeoutMS   int    `json:"timeout_ms"`
-	Env         string `json:"env"`
-	Enabled     *bool  `json:"enabled"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Runtime     string   `json:"runtime"`
+	Route       string   `json:"route"`
+	TimeoutMS   int      `json:"timeout_ms"`
+	Env         []string `json:"env"`
+	Enabled     *bool    `json:"enabled"`
 }
 
 // UpdateWorkerRequest 表示更新 Worker 的请求体。
 type UpdateWorkerRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Route       string `json:"route"`
-	TimeoutMS   int    `json:"timeout_ms"`
-	Env         string `json:"env"`
-	Enabled     *bool  `json:"enabled"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Route       string   `json:"route"`
+	TimeoutMS   int      `json:"timeout_ms"`
+	Env         []string `json:"env"`
+	Enabled     *bool    `json:"enabled"`
 }
 
 // WorkerIDRequest 表示仅包含 Worker ID 的请求体。

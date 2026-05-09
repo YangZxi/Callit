@@ -40,6 +40,10 @@ services:
     container_name: callit-dev-redis
     ports:
       - "6379:6379"
+    volumes:
+      - ./redis-data:/data
+    sysctls:
+      vm.overcommit_memory: "1"
 
 volumes:
   go-mod-cache:

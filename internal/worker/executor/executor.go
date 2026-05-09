@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -437,7 +436,7 @@ func buildSandboxCommand(input sandboxCommandInput) (*exec.Cmd, func(), error) {
 		CallitMagicApiBaseURL: fmt.Sprintf("http://127.0.0.1:%d", input.ServerPort),
 		WorkerID:              input.WorkerSpec.Worker.ID,
 		RequestID:             input.RequestID,
-		CustomKV:              parseWorkerEnvPairs(input.WorkerSpec.Worker.Env),
+		CustomEnv:             buildSandboxWorkerEnv(input.WorkerSpec.Worker.Env),
 		NodeModuleType:        nodeType,
 	})
 	return cmd, cleanup, nil
@@ -542,7 +541,7 @@ type workerEnvConfig struct {
 	CallitMagicApiBaseURL string
 	WorkerID              string
 	RequestID             string
-	CustomKV              map[string]string
+	CustomEnv             []string
 	NodeModuleType        nodeModuleType
 }
 
@@ -564,15 +563,8 @@ func buildSandboxEnv(runtimeDir string, runtime string, executablePath string, w
 			"CALLIT_REQUEST_ID="+workerEnv.RequestID,
 		)
 	}
-	if len(workerEnv.CustomKV) > 0 {
-		keys := make([]string, 0, len(workerEnv.CustomKV))
-		for key := range workerEnv.CustomKV {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			envList = append(envList, key+"="+workerEnv.CustomKV[key])
-		}
+	if len(workerEnv.CustomEnv) > 0 {
+		envList = append(envList, workerEnv.CustomEnv...)
 	}
 
 	switch runtime {
@@ -608,11 +600,8 @@ func detectNodeModuleType(workerCodeDir string) (nodeModuleType, error) {
 	return nodeModuleTypeCommonJS, nil
 }
 
-func parseWorkerEnvPairs(envText string) map[string]string {
-	entries := strings.FieldsFunc(envText, func(r rune) bool {
-		return r == ';' || r == '\n'
-	})
-	envMap := make(map[string]string, len(entries))
+func buildSandboxWorkerEnv(entries model.WorkerEnv) []string {
+	envList := make([]string, 0, len(entries))
 	for _, item := range entries {
 		raw := strings.TrimSpace(item)
 		if raw == "" {
@@ -626,9 +615,9 @@ func parseWorkerEnvPairs(envText string) map[string]string {
 		if key == "" {
 			continue
 		}
-		envMap[key] = strings.TrimSpace(value)
+		envList = append(envList, key+"="+strings.TrimSpace(value))
 	}
-	return envMap
+	return envList
 }
 
 func appendRuntimeEnvPaths(env []string, key string, paths []string) []string {

@@ -262,10 +262,7 @@ func TestBuildSandboxEnvIncludesKVEnv(t *testing.T) {
 
 func TestBuildSandboxEnvIncludesWorkerCustomEnv(t *testing.T) {
 	envList := buildSandboxEnv("/data/.lib", "node", "/usr/bin/node", workerEnvConfig{
-		CustomKV: map[string]string{
-			"API_KEY": "test-key",
-			"REGION":  "us",
-		},
+		CustomEnv: []string{"API_KEY=test-key", "REGION=us"},
 	})
 
 	assertContains := func(want string) {
@@ -278,19 +275,22 @@ func TestBuildSandboxEnvIncludesWorkerCustomEnv(t *testing.T) {
 	assertContains("REGION=us")
 }
 
-func TestParseWorkerEnvPairs(t *testing.T) {
-	parsed := parseWorkerEnvPairs(" API_KEY = test ;\nREGION=us \nINVALID\n=empty;A=B=C")
-	if len(parsed) != 3 {
+func TestBuildSandboxWorkerEnv(t *testing.T) {
+	parsed := buildSandboxWorkerEnv(model.WorkerEnv{" API_KEY = test ", "REGION=us ", "INVALID", "=empty", "A=B=C", "COOKIE=foo=bar;hello=world"})
+	if len(parsed) != 4 {
 		t.Fatalf("解析结果数量不正确: %#v", parsed)
 	}
-	if parsed["API_KEY"] != "test" {
+	if parsed[0] != "API_KEY=test" {
 		t.Fatalf("API_KEY 解析失败: %#v", parsed)
 	}
-	if parsed["REGION"] != "us" {
+	if parsed[1] != "REGION=us" {
 		t.Fatalf("REGION 解析失败: %#v", parsed)
 	}
-	if parsed["A"] != "B=C" {
+	if parsed[2] != "A=B=C" {
 		t.Fatalf("A 解析失败: %#v", parsed)
+	}
+	if parsed[3] != "COOKIE=foo=bar;hello=world" {
+		t.Fatalf("COOKIE 解析失败: %#v", parsed)
 	}
 }
 

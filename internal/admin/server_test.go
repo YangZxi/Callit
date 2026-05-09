@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -51,6 +52,36 @@ func openAdminTestStore(t *testing.T) *db.Store {
 		}
 	})
 	return store
+}
+
+func openAdminTestStoreAtPath(t *testing.T, dbPath string) *db.Store {
+	t.Helper()
+
+	store, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("打开测试数据库失败: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Fatalf("关闭测试数据库失败: %v", err)
+		}
+	})
+	return store
+}
+
+func openRawSQLiteDB(t *testing.T, dbPath string) *sql.DB {
+	t.Helper()
+
+	rawDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("打开原始 SQLite 连接失败: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := rawDB.Close(); err != nil {
+			t.Fatalf("关闭原始 SQLite 连接失败: %v", err)
+		}
+	})
+	return rawDB
 }
 
 func createAdminTestWorker(t *testing.T, store *db.Store, workerID string) {
@@ -233,6 +264,139 @@ func TestListWorkersSupportsKeywordFilter(t *testing.T) {
 	}
 	if len(body.Data) != 3 {
 		t.Fatalf("空 keyword 应返回全部 worker: got=%d data=%#v", len(body.Data), body.Data)
+	}
+}
+
+func TestGetWorkerAPIEnvUsesArray(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "app.db")
+	store := openAdminTestStoreAtPath(t, dbPath)
+	if _, err := store.Worker.Create(context.Background(), model.Worker{
+		ID:        "worker-env-array",
+		Name:      "测试 Worker",
+		Runtime:   "python",
+		Route:     "/worker-env-array",
+		TimeoutMS: 3000,
+		Env:       model.WorkerEnv{"API_KEY=test", "REGION=us"},
+		Enabled:   true,
+	}); err != nil {
+		t.Fatalf("创建测试 Worker 失败: %v", err)
+	}
+
+	cfg := config.Config{
+		AdminPrefix: "/admin",
+		AdminToken:  "test-token",
+		DataDir:     t.TempDir(),
+	}
+	engine := NewEngine(store, router.New(), nil, &cfg)
+
+	resp := doAdminJSONRequest(t, engine, http.MethodGet, "/admin/api/workers/worker-env-array", nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("查询 Worker 接口返回错误: code=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var body struct {
+		Data model.Worker `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("解析 Worker 响应失败: %v", err)
+	}
+	want := model.WorkerEnv{"API_KEY=test", "REGION=us"}
+	if len(body.Data.Env) != len(want) {
+		t.Fatalf("env 返回数量不正确: %#v", body.Data.Env)
+	}
+	for i := range want {
+		if body.Data.Env[i] != want[i] {
+			t.Fatalf("env 返回结果不正确: got=%#v want=%#v", body.Data.Env, want)
+		}
+	}
+}
+
+func TestCreateWorkerAPIAcceptsEnvArray(t *testing.T) {
+	store := openAdminTestStore(t)
+	cfg := config.Config{
+		AdminPrefix: "/admin",
+		AdminToken:  "test-token",
+		DataDir:     t.TempDir(),
+	}
+	engine := NewEngine(store, router.New(), nil, &cfg)
+
+	resp := doAdminJSONRequest(t, engine, http.MethodPost, "/admin/api/workers/create", map[string]any{
+		"name":       "api-env-worker",
+		"runtime":    "python",
+		"route":      "/api-env-worker",
+		"timeout_ms": 3000,
+		"env":        []string{"API_KEY=test", "REGION=us"},
+	})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("创建 Worker 接口返回错误: code=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var body struct {
+		Data model.Worker `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("解析创建 Worker 响应失败: %v", err)
+	}
+	want := model.WorkerEnv{"API_KEY=test", "REGION=us"}
+	if len(body.Data.Env) != len(want) {
+		t.Fatalf("创建 Worker 返回的 env 数量不正确: %#v", body.Data.Env)
+	}
+	for i := range want {
+		if body.Data.Env[i] != want[i] {
+			t.Fatalf("创建 Worker 返回的 env 不正确: got=%#v want=%#v", body.Data.Env, want)
+		}
+	}
+}
+
+func TestListWorkersAPIReadsLegacyStringEnvAsArray(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "app.db")
+	store := openAdminTestStoreAtPath(t, dbPath)
+	if _, err := store.Worker.Create(context.Background(), model.Worker{
+		ID:        "worker-legacy-env",
+		Name:      "Legacy Env",
+		Runtime:   "python",
+		Route:     "/worker-legacy-env",
+		TimeoutMS: 3000,
+		Env:       model.WorkerEnv{"TEMP=value"},
+		Enabled:   true,
+	}); err != nil {
+		t.Fatalf("创建测试 Worker 失败: %v", err)
+	}
+
+	rawDB := openRawSQLiteDB(t, dbPath)
+	if _, err := rawDB.Exec("UPDATE worker SET env = ? WHERE id = ?", "API_KEY=test;REGION=us", "worker-legacy-env"); err != nil {
+		t.Fatalf("写入旧格式 env 失败: %v", err)
+	}
+
+	cfg := config.Config{
+		AdminPrefix: "/admin",
+		AdminToken:  "test-token",
+		DataDir:     t.TempDir(),
+	}
+	engine := NewEngine(store, router.New(), nil, &cfg)
+
+	resp := doAdminJSONRequest(t, engine, http.MethodGet, "/admin/api/workers?keyword=legacy", nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("查询 workers 接口返回错误: code=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var body struct {
+		Data []model.Worker `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("解析 workers 响应失败: %v", err)
+	}
+	if len(body.Data) != 1 {
+		t.Fatalf("workers 返回数量不正确: %#v", body.Data)
+	}
+	want := model.WorkerEnv{"API_KEY=test", "REGION=us"}
+	if len(body.Data[0].Env) != len(want) {
+		t.Fatalf("兼容旧格式的 env 数量不正确: %#v", body.Data[0].Env)
+	}
+	for i := range want {
+		if body.Data[0].Env[i] != want[i] {
+			t.Fatalf("兼容旧格式的 env 不正确: got=%#v want=%#v", body.Data[0].Env, want)
+		}
 	}
 }
 

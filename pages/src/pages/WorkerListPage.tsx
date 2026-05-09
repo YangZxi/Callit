@@ -17,7 +17,7 @@ type WorkerItem = {
   runtime: "python" | "node";
   route: string;
   timeout_ms: number;
-  env: string;
+  env: string[];
   enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -82,12 +82,11 @@ export default function WorkerListPage() {
 
   const empty = useMemo(() => !listLoading && workers.length === 0, [listLoading, workers.length]);
 
-  const normalizeEnvInput = (value: string): string => {
+  const splitEnvInputLines = (value: string): string[] => {
     return value
-      .split(/[\n;]/)
+      .split(/\r\n|\n|\r/)
       .map((item) => item.trim())
-      .filter((item) => item.length > 0)
-      .join(";");
+      .filter((item) => item.length > 0);
   };
 
   const loadWorkers = async (searchKeyword: string = keyword) => {
@@ -162,7 +161,7 @@ export default function WorkerListPage() {
           runtime: form.runtime,
           route: form.route.trim(),
           timeout_ms: timeoutMS,
-          env: normalizeEnvInput(form.env),
+          env: splitEnvInputLines(form.env),
           enabled: form.enabled,
         });
       } else {
@@ -172,7 +171,7 @@ export default function WorkerListPage() {
           description: form.description.trim(),
           route: form.route.trim(),
           timeout_ms: timeoutMS,
-          env: normalizeEnvInput(form.env),
+          env: splitEnvInputLines(form.env),
           enabled: form.enabled,
         });
       }
@@ -204,7 +203,7 @@ export default function WorkerListPage() {
       runtime: item.runtime,
       route: item.route,
       timeoutMS: String(item.timeout_ms),
-      env: item.env || "",
+      env: (item.env || []).join("\n"),
       enabled: item.enabled,
     });
     setTimeoutSeconds(formatMillisecondsToSeconds(item.timeout_ms));
@@ -484,7 +483,6 @@ export default function WorkerListPage() {
             />
             <Input
               isRequired
-              description="单位为秒，支持 1 位小数，例如 0.1、0.9、5"
               label="超时(秒)"
               name="worker-timeout"
               type="number"
@@ -494,12 +492,12 @@ export default function WorkerListPage() {
             />
           </div>
           <div className="flex flex-col gap-1 mb-1">
-            <Label htmlFor="worker-env">环境变量</Label>
+            <Label htmlFor="worker-env">环境变量 (多个以换行分隔)</Label>
             <TextArea
               id="worker-env"
               className="w-full"
               rows={3}
-              placeholder="KEY=value;KEY2=value2;..."
+              placeholder="KEY=value&#10;KEY2=value2&#10;..."
               value={form.env}
               onChange={(event) => setForm((prev) => ({ ...prev, env: event.target.value }))}
             />

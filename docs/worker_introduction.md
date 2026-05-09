@@ -22,7 +22,7 @@ Worker 中的脚本仅允许读写 `/tmp` 文件夹，其他文件皆为**只读
 
 ## 环境变量使用说明
 
-创建/编辑 Worker 时可设置环境变量，多个变量请使用分号 `;` 分隔，执行时会自动注入到 Worker 运行环境。  
+创建/编辑 Worker 时可设置环境变量，多个变量请按换行分隔，每行一个 `KEY=value`，执行时会自动注入到 Worker 运行环境。后台接口中的 `env` 字段使用字符串数组表示，每一项都是一个完整的 `KEY=value`。  
 在 Worker 内，你可以使用系统环境变量接口来访问这些变量：
 - Python：`os.environ.get("KEY")`
 - Node.js：`process.env.KEY`
