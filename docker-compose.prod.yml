@@ -30,5 +30,3 @@ services:
     restart: unless-stopped
     volumes:
       - ./redis-data:/data
-    sysctls:
-      vm.overcommit_memory: "1"
