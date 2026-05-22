@@ -499,7 +499,10 @@ export default function WorkerDetailPage() {
                 }}
               >
                 {files.map((file) => (
-                  <ListBox.Item key={file} id={file} textValue={file}>
+                  <ListBox.Item 
+                    className="break-all"
+                    key={file} id={file} textValue={file}
+                  >
                     {file}
                     <ListBox.ItemIndicator />
                   </ListBox.Item>
