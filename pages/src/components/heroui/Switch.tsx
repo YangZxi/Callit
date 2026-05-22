@@ -18,6 +18,9 @@ export default function Switch({
   return (
     <HeroSwitch
       className={className}
+      style={{
+        width: "max-content"
+      }}
       isDisabled={isDisabled}
       isSelected={value}
       onChange={onValueChange}

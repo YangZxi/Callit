@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Tooltip, toast } from "@heroui/react";
+import { Alert, Surface, Tooltip, toast } from "@heroui/react";
 import { Button } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
@@ -151,24 +151,19 @@ export default function WorkerCronList({ workerId, isOpen }: WorkerCronListProps
 
   return (
     <div className="flex min-h-[220px] flex-col gap-3">
-      <Tooltip>
-        <Button isIconOnly variant="tertiary">
-          <Icon icon="ri:question-line" width={20} />
-        </Button>
-        <Tooltip.Content>
-          <div className="text-sm flex flex-col gap-2">
-            支持标准的 Cron 表达式格式，示例：
-            <p>
-              每小时的第 10 分钟执行
-              <span className="ml-2 rounded bg-default-200 px-1.5 py-0.5 font-mono text-xs">10 * * * *</span>
-            </p>
-            <p>
-              每 30 秒执行一次
-              <span className="ml-2 rounded bg-default-200 px-1.5 py-0.5 font-mono text-xs">*/30 * * * * *</span>
-            </p>
-          </div>
-        </Tooltip.Content>
-      </Tooltip>
+      <Surface className="flex flex-col gap-3 rounded-3xl p-3" variant="secondary">
+        <div className="text-sm flex flex-col">
+          支持标准的 Cron 表达式格式，示例：
+          <p>
+            每小时的第 10 分钟执行
+            <span className="ml-2 rounded bg-default-300 px-1.5 py-0.5 font-mono text-xs">10 * * * *</span>
+          </p>
+          <p>
+            每 30 秒执行一次
+            <span className="ml-2 rounded bg-default-300 px-1.5 py-0.5 font-mono text-xs">*/30 * * * * *</span>
+          </p>
+        </div>
+      </Surface>
 
       {loading ? <p className="text-sm text-default-500">正在加载 Cron 列表...</p> : null}
 

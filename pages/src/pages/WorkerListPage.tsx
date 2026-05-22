@@ -498,7 +498,7 @@ export default function WorkerListPage() {
               id="worker-env"
               className="w-full"
               rows={3}
-              placeholder="KEY=value\nKEY2=value2\n..."
+              placeholder={[`KEY=value`, `KEY2=value2`, `...`].join("\n")}
               value={form.env}
               onChange={(event) => setForm((prev) => ({ ...prev, env: event.target.value }))}
             />

@@ -166,21 +166,22 @@ export default function WorkerDetailPage() {
       setActiveDiffFile("");
       return;
     }
-    const maybeDiff = buildDiffFilename(filename);
-    try {
-      const diffData = await fetchFileContent(maybeDiff, { hideToast: true });
-      if (diffData.media_type === "image") {
-        setOriginContent("");
-        setActiveDiffFile("");
-        return;
-      }
-      setOriginContent(data.content || "");
-      setContent(diffData.content || "");
-      setActiveDiffFile(maybeDiff);
-    } catch {
-      setOriginContent("");
-      setActiveDiffFile("");
-    }
+    // 尝试加载 diff 文件，暂时禁用
+    // const maybeDiff = buildDiffFilename(filename);
+    // try {
+    //   const diffData = await fetchFileContent(maybeDiff, { hideToast: true });
+    //   if (diffData.media_type === "image") {
+    //     setOriginContent("");
+    //     setActiveDiffFile("");
+    //     return;
+    //   }
+    //   setOriginContent(data.content || "");
+    //   setContent(diffData.content || "");
+    //   setActiveDiffFile(maybeDiff);
+    // } catch {
+    //   setOriginContent("");
+    //   setActiveDiffFile("");
+    // }
   }, [fetchFileContent]);
 
   useEffect(() => {
@@ -499,7 +500,10 @@ export default function WorkerDetailPage() {
                 }}
               >
                 {files.map((file) => (
-                  <ListBox.Item key={file} id={file} textValue={file}>
+                  <ListBox.Item 
+                    className="break-all"
+                    key={file} id={file} textValue={file}
+                  >
                     {file}
                     <ListBox.ItemIndicator />
                   </ListBox.Item>

@@ -154,7 +154,6 @@ export default function ConfigManagePage() {
         >
           <div>
             <p className="text-base font-semibold">AppConfig</p>
-            <p className="mt-1 text-sm text-default-500">优先级：数据库 → 环境变量 → 默认值</p>
           </div>
           <Button isDisabled={loading} size="sm" variant="tertiary" onPress={load}>
             刷新
