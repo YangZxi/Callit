@@ -40,6 +40,7 @@ const defaultClient = kv.newClient();
 
 - `set(key, value, seconds)`
   - `value` 必须是 `string`
+  - `seconds` 为正整数时，表示 key 的过期秒数，为 `None/null/undefined/0` 或省略时，表示 key 永不过期
   - 成功时不返回内容
 - `get(key)`
   - 返回 `string`
@@ -48,6 +49,7 @@ const defaultClient = kv.newClient();
 - `increment(key, step=1)`
   - 返回递增后的整数值
 - `expire(key, seconds)`
+  - `seconds` 规则与 `set` 一致
   - 成功时不返回内容
 - `ttl(key)`
   - 返回剩余秒数

@@ -48,6 +48,10 @@ func (s *RedisStore) Expire(ctx context.Context, key string, ttl time.Duration) 
 	return s.client.Expire(ctx, key, ttl).Err()
 }
 
+func (s *RedisStore) Persist(ctx context.Context, key string) error {
+	return s.client.Persist(ctx, key).Err()
+}
+
 func (s *RedisStore) TTL(ctx context.Context, key string) (int64, error) {
 	ttl, err := s.client.TTL(ctx, key).Result()
 	if err != nil {

@@ -51,18 +51,24 @@ def normalize_namespace(namespace):
     return normalized_namespace
 
 
+def _normalize_seconds(seconds):
+    if seconds is None:
+        return 0
+    return seconds
+
+
 class _KVClient:
     def __init__(self, namespace=None):
         self._namespace = normalize_namespace(namespace)
 
-    def set(self, key, value, seconds):
+    def set(self, key, value, seconds=None):
         if not isinstance(value, str):
             raise TypeError("kv client 的 value 必须是 string")
         _request("set", {
             "namespace": self._namespace,
             "key": key,
             "value": value,
-            "seconds": seconds,
+            "seconds": _normalize_seconds(seconds),
         })
 
     def get(self, key):
@@ -76,8 +82,8 @@ class _KVClient:
         response = _request("increment", {"namespace": self._namespace, "key": key, "step": step}) or {}
         return int(response.get("int_value", 0))
 
-    def expire(self, key, seconds):
-        _request("expire", {"namespace": self._namespace, "key": key, "seconds": seconds})
+    def expire(self, key, seconds=None):
+        _request("expire", {"namespace": self._namespace, "key": key, "seconds": _normalize_seconds(seconds)})
 
     def ttl(self, key):
         response = _request("ttl", {"namespace": self._namespace, "key": key}) or {}

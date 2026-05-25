@@ -13,6 +13,7 @@ type Store interface {
 	Exists(ctx context.Context, key string) (bool, error)
 	Increment(ctx context.Context, key string, step int64) (int64, error)
 	Expire(ctx context.Context, key string, ttl time.Duration) error
+	Persist(ctx context.Context, key string) error
 	TTL(ctx context.Context, key string) (int64, error)
 }
 
@@ -25,8 +26,8 @@ func NewService(store Store) *Service {
 }
 
 func (s *Service) Set(ctx context.Context, namespace string, userKey string, value any, ttl time.Duration) error {
-	if ttl <= 0 {
-		return fmt.Errorf("seconds 必须大于 0")
+	if ttl < 0 {
+		return fmt.Errorf("seconds 不能小于 0")
 	}
 	key, err := BuildRedisKey(namespace, userKey)
 	if err != nil {
@@ -83,8 +84,11 @@ func (s *Service) Expire(ctx context.Context, namespace string, userKey string, 
 	if err != nil {
 		return err
 	}
-	if ttl <= 0 {
-		return fmt.Errorf("seconds 必须大于 0")
+	if ttl < 0 {
+		return fmt.Errorf("seconds 不能小于 0")
+	}
+	if ttl == 0 {
+		return s.store.Persist(ctx, key)
 	}
 	return s.store.Expire(ctx, key, ttl)
 }

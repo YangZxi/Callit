@@ -83,6 +83,13 @@ function normalizeNamespace(namespace) {
   return normalizedNamespace;
 }
 
+function normalizeSeconds(seconds) {
+  if (seconds === null || seconds === undefined) {
+    return 0;
+  }
+  return seconds;
+}
+
 function createKVClient(namespace) {
   const normalizedNamespace = normalizeNamespace(namespace);
 
@@ -95,7 +102,7 @@ function createKVClient(namespace) {
         namespace: normalizedNamespace,
         key,
         value,
-        seconds,
+        seconds: normalizeSeconds(seconds),
       });
     },
     async get(key) {
@@ -110,7 +117,7 @@ function createKVClient(namespace) {
       return Number.parseInt(String(response.int_value || 0), 10);
     },
     async expire(key, seconds) {
-      await request("expire", { namespace: normalizedNamespace, key, seconds });
+      await request("expire", { namespace: normalizedNamespace, key, seconds: normalizeSeconds(seconds) });
     },
     async ttl(key) {
       const response = (await request("ttl", { namespace: normalizedNamespace, key })) || {};
