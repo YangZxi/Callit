@@ -6,13 +6,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"callit/internal/admin/message"
+	adminStorage "callit/internal/admin/storage"
 	"callit/internal/config"
 	"callit/internal/db"
 	"callit/internal/model"
@@ -122,6 +125,170 @@ func doAdminJSONRequestWithoutAuth(t *testing.T, engine http.Handler, method str
 	resp := httptest.NewRecorder()
 	engine.ServeHTTP(resp, req)
 	return resp
+}
+
+type fakeStorageKVStore struct {
+	values  map[string]string
+	ttls    map[string]int64
+	deleted []string
+}
+
+func newFakeStorageKVStore() *fakeStorageKVStore {
+	return &fakeStorageKVStore{
+		values: map[string]string{
+			"callit:kv:worker-1:session": "value-1",
+			"callit:kv:worker-2:profile": "value-2",
+			"other:key":                  "ignored",
+		},
+		ttls: map[string]int64{
+			"callit:kv:worker-1:session": 60,
+			"callit:kv:worker-2:profile": -1,
+		},
+	}
+}
+
+func (s *fakeStorageKVStore) ScanKeys(_ context.Context, pattern string, limit int64) ([]string, error) {
+	var keyword string
+	if strings.HasPrefix(pattern, "callit:kv:*") && strings.HasSuffix(pattern, "*") {
+		keyword = strings.TrimSuffix(strings.TrimPrefix(pattern, "callit:kv:*"), "*")
+	}
+	keys := make([]string, 0)
+	for key := range s.values {
+		if !strings.HasPrefix(key, "callit:kv:") {
+			continue
+		}
+		if keyword != "" && !strings.Contains(key, keyword) {
+			continue
+		}
+		keys = append(keys, key)
+		if limit > 0 && int64(len(keys)) >= limit {
+			break
+		}
+	}
+	return keys, nil
+}
+
+func (s *fakeStorageKVStore) GetWithTTL(_ context.Context, key string) (string, int64, bool, error) {
+	value, ok := s.values[key]
+	if !ok {
+		return "", -2, false, nil
+	}
+	return value, s.ttls[key], true, nil
+}
+
+func (s *fakeStorageKVStore) DeleteRawKey(_ context.Context, key string) error {
+	s.deleted = append(s.deleted, key)
+	delete(s.values, key)
+	return nil
+}
+
+func (s *fakeStorageKVStore) Stats(_ context.Context) (adminStorage.KVStats, error) {
+	return adminStorage.KVStats{
+		ConnectedClients: 2,
+		UsedMemory:       1024,
+		UsedMemoryHuman:  "1K",
+		KVKeys:           2,
+	}, nil
+}
+
+func TestAdminKVAPIRequiresAuth(t *testing.T) {
+	store := openAdminTestStore(t)
+	cfg := config.Config{
+		AdminPrefix: "/admin",
+		AdminToken:  "test-token",
+		DataDir:     t.TempDir(),
+	}
+	engine := NewEngineWithOptions(store, router.New(), nil, &cfg, StorageStore{
+		KVStore: newFakeStorageKVStore(),
+	})
+
+	resp := doAdminJSONRequestWithoutAuth(t, engine, http.MethodGet, "/admin/api/kv/keys", nil)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("未认证访问 kv keys 应返回 401: code=%d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestAdminKVKeysUsesManagedScanPattern(t *testing.T) {
+	store := openAdminTestStore(t)
+	kvStore := newFakeStorageKVStore()
+	cfg := config.Config{
+		AdminPrefix: "/admin",
+		AdminToken:  "test-token",
+		DataDir:     t.TempDir(),
+	}
+	engine := NewEngineWithOptions(store, router.New(), nil, &cfg, StorageStore{
+		KVStore: kvStore,
+	})
+
+	resp := doAdminJSONRequest(t, engine, http.MethodGet, "/admin/api/kv/keys", nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("kv keys 接口应返回 200: code=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		Data []adminStorage.KVKeyItem `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("解析 kv keys 响应失败: %v", err)
+	}
+	if len(body.Data) != 2 {
+		t.Fatalf("kv keys 应只返回 Callit KV key: %#v", body.Data)
+	}
+
+	filteredResp := doAdminJSONRequest(t, engine, http.MethodGet, "/admin/api/kv/keys?key=session", nil)
+	if filteredResp.Code != http.StatusOK {
+		t.Fatalf("kv keys 过滤接口应返回 200: code=%d body=%s", filteredResp.Code, filteredResp.Body.String())
+	}
+	if err := json.Unmarshal(filteredResp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("解析 kv keys 过滤响应失败: %v", err)
+	}
+	if len(body.Data) != 1 || body.Data[0].Key != "callit:kv:worker-1:session" {
+		t.Fatalf("kv keys 过滤结果不正确: %#v", body.Data)
+	}
+}
+
+func TestAdminKVKeyDetailAndDelete(t *testing.T) {
+	store := openAdminTestStore(t)
+	kvStore := newFakeStorageKVStore()
+	cfg := config.Config{
+		AdminPrefix: "/admin",
+		AdminToken:  "test-token",
+		DataDir:     t.TempDir(),
+	}
+	engine := NewEngineWithOptions(store, router.New(), nil, &cfg, StorageStore{
+		KVStore: kvStore,
+	})
+
+	key := "callit:kv:worker-1:session"
+	resp := doAdminJSONRequest(t, engine, http.MethodGet, "/admin/api/kv/key?key="+url.QueryEscape(key), nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("kv key detail 接口应返回 200: code=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		Data adminStorage.KVKeyDetail `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("解析 kv key detail 响应失败: %v", err)
+	}
+	if !body.Data.Exists || body.Data.Value != "value-1" || body.Data.TTL != 60 {
+		t.Fatalf("kv key detail 返回不正确: %#v", body.Data)
+	}
+
+	rejectResp := doAdminJSONRequest(t, engine, http.MethodPost, "/admin/api/kv/key/delete", map[string]any{
+		"key": "other:key",
+	})
+	if rejectResp.Code != http.StatusBadRequest {
+		t.Fatalf("删除非 Callit KV key 应返回 400: code=%d body=%s", rejectResp.Code, rejectResp.Body.String())
+	}
+
+	deleteResp := doAdminJSONRequest(t, engine, http.MethodPost, "/admin/api/kv/key/delete", map[string]any{
+		"key": key,
+	})
+	if deleteResp.Code != http.StatusOK {
+		t.Fatalf("删除 Callit KV key 应返回 200: code=%d body=%s", deleteResp.Code, deleteResp.Body.String())
+	}
+	if len(kvStore.deleted) != 1 || kvStore.deleted[0] != key {
+		t.Fatalf("删除的 key 不正确: %#v", kvStore.deleted)
+	}
 }
 
 func TestWorkerCronCRUDAPI(t *testing.T) {

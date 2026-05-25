@@ -10,6 +10,8 @@ import WorkerDetailPage from "./pages/WorkerDetailPage";
 import DependenciesPage from "./pages/DependenciesPage";
 import ConfigManagePage from "./pages/ConfigManagePage";
 import AboutPage from "./pages/AboutPage";
+import StorageKVPage from "./pages/StorageKVPage";
+import StorageDBPage from "./pages/StorageDBPage";
 import { checkAdminAuthenticated } from "./lib/admin-auth";
 import { BASE_PREFIX } from "./main";
 
@@ -57,6 +59,9 @@ function App() {
         <Route path={`${PREFIX}/dashboard`} element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path={`${PREFIX}/workers`} element={<ProtectedRoute><WorkerListPage /></ProtectedRoute>} />
         <Route path={`${PREFIX}/workers/:id`} element={<ProtectedRoute><WorkerDetailPage /></ProtectedRoute>} />
+        <Route path={`${PREFIX}/storage`} element={<Navigate replace to={`${PREFIX}/storage/kv`} />} />
+        <Route path={`${PREFIX}/storage/kv`} element={<ProtectedRoute><StorageKVPage /></ProtectedRoute>} />
+        <Route path={`${PREFIX}/storage/db`} element={<ProtectedRoute><StorageDBPage /></ProtectedRoute>} />
         <Route path={`${PREFIX}/dependencies`} element={<ProtectedRoute><DependenciesPage /></ProtectedRoute>} />
         <Route path={`${PREFIX}/config`} element={<ProtectedRoute><ConfigManagePage /></ProtectedRoute>} />
         <Route path={`${PREFIX}/about`} element={<AboutPage />} />

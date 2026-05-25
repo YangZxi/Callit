@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"callit/internal/admin"
+	adminStorage "callit/internal/admin/storage"
 	"callit/internal/config"
 	"callit/internal/cron"
 	"callit/internal/db"
@@ -85,12 +86,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	redisClient := newRedisClient(cfg)
 	routerEngine := router.NewEngine(store, reg, cfg, invoker)
-	adminEngine := admin.NewEngine(store, reg, cronManager, &cfg)
+	adminEngine := admin.NewEngineWithOptions(store, reg, cronManager, &cfg, admin.StorageStore{
+		KVStore: adminStorage.NewRedisKVStore(redisClient),
+	})
 	mcpHandler := mcp.NewHandler(store, reg, cronManager, &cfg)
 	handler := serverRouteHandler(adminEngine, mcpHandler, routerEngine, &cfg)
 	magicHandler := magicapi.NewHandler(magicapi.Options{
-		KVService: magicKV.NewService(newRedisStore(cfg)),
+		KVService: magicKV.NewService(magicKV.NewRedisStore(redisClient)),
 		DBService: workerDBService,
 	})
 	serverAddr, magicAddr := buildListenAddrs(cfg.ServerPort, cfg.MagicServerPort)
@@ -194,13 +198,12 @@ func ensureRuntimeDirs(cfg config.Config) error {
 	return nil
 }
 
-func newRedisStore(cfg config.Config) magicKV.Store {
-	client := redis.NewClient(&redis.Options{
+func newRedisClient(cfg config.Config) redis.UniversalClient {
+	return redis.NewClient(&redis.Options{
 		Addr:     cfg.RedisAddr,
 		Password: cfg.RedisPassword,
 		DB:       cfg.RedisDB,
 	})
-	return magicKV.NewRedisStore(client)
 }
 
 func resolveLocalIPv4() string {

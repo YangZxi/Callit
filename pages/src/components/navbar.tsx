@@ -1,5 +1,5 @@
-import { Link as RouterLink, NavLink, useLocation } from "react-router-dom";
-import { Link as HeroLink } from "@heroui/react";
+import { Link as RouterLink, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Button, Dropdown, Link as HeroLink } from "@heroui/react";
 import clsx from "clsx";
 
 // import Login from "./login";
@@ -9,6 +9,7 @@ import { siteConfig } from "@/config/site";
 
 function AppNavbar() {
   const location = useLocation();
+  const navigate = useNavigate();
 
   return (
     <nav
@@ -24,7 +25,7 @@ function AppNavbar() {
       <div className="px-0 gap-6 h-12 flex items-center justify-between">
         <div className="basis-1/5 sm:basis-full flex items-center justify-start gap-3 max-w-fit mr-2">
           <RouterLink className="flex justify-start items-center gap-1 no-underline" to={`${window.__BASE_PREFIX__}/`}>
-            <img 
+            <img
               src={`${window.__BASE_PREFIX__}/static/logo.png`}
               alt="Logo"
               className="h-6 w-6 rounded-sm object-cover"
@@ -34,7 +35,46 @@ function AppNavbar() {
         </div>
         <ul className="flex gap-6 justify-start ml-2">
           {siteConfig.navItems.map((item) => {
-            const active = location.pathname === item.href;
+            const children = "children" in item ? item.children : undefined;
+            const active = children
+              ? children.some((child) => location.pathname === child.href)
+              : location.pathname === item.href;
+            if (children) {
+              return (
+                <li key={item.href}>
+                  <Dropdown>
+                    <Dropdown.Trigger>
+                      <div
+                        className={clsx(
+                          `${item.mobile === true ? "" : "hidden sm:inline-block"}`,
+                          "no-underline opacity-80 hover:opacity-100 transition-opacity",
+                          active ? "text-primary font-medium opacity-100" : "text-default-700",
+                        )}
+                      >
+                        {item.label}
+                      </div>
+                    </Dropdown.Trigger>
+                    <Dropdown.Popover 
+                      placement="bottom" 
+                      className="min-w-[90px] bg-transparent bg-background/70 backdrop-blur-xl backdrop-saturate-150"
+                    >
+                      <Dropdown.Menu aria-label={`${item.label} 导航`}>
+                        {children.map((child) => (
+                          <Dropdown.Item
+                            key={child.href}
+                            id={child.href}
+                            textValue={child.label}
+                            onPress={() => navigate(child.href)}
+                          >
+                            {child.label}
+                          </Dropdown.Item>
+                        ))}
+                      </Dropdown.Menu>
+                    </Dropdown.Popover>
+                  </Dropdown>
+                </li>
+              );
+            }
             return (
               <li key={item.href}>
                 <NavLink
@@ -51,7 +91,7 @@ function AppNavbar() {
             );
           })}
         </ul>
-      
+
         <div className="sm:flex basis-1/5 sm:basis-full items-center justify-end">
           <div className="h-6 w-[1px] bg-default-300 mx-1 hidden sm:block" />
           <div className="flex gap-2 items-center">

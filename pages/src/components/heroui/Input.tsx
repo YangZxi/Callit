@@ -40,6 +40,7 @@ export default function Input({
 	autoComplete,
 	onValueChange,
 	onKeyDown,
+	...props
 }: InputProps) {
 	return (
 		<TextField

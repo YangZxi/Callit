@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"callit/internal/admin/message"
+	adminStorage "callit/internal/admin/storage"
 	"callit/internal/common"
 	"callit/internal/common/snowflake"
 	"callit/internal/config"
@@ -45,10 +46,15 @@ type Server struct {
 	adminToken   string
 	workerSvc    *WorkerService
 	dashboardSvc *DashboardService
+	storageKvSvc *adminStorage.KVService
 	configMu     sync.RWMutex
 
 	dependencyTaskMu      sync.Mutex
 	dependencyTaskRunning bool
+}
+
+type StorageStore struct {
+	KVStore adminStorage.KVStore
 }
 
 func writeAPIResponse(c *gin.Context, httpStatus int, code int, msg string, data any) {
@@ -69,6 +75,10 @@ func apiError(c *gin.Context, httpStatus int, msg string) {
 
 // NewEngine 创建 Admin Gin 引擎。
 func NewEngine(store *db.Store, reg *router.Registry, cronReloader interface{ Reload(context.Context) error }, cfg *config.Config) *gin.Engine {
+	return NewEngineWithOptions(store, reg, cronReloader, cfg, StorageStore{})
+}
+
+func NewEngineWithOptions(store *db.Store, reg *router.Registry, cronReloader interface{ Reload(context.Context) error }, cfg *config.Config, opts StorageStore) *gin.Engine {
 	workersDir := cfg.WorkersDir
 	if strings.TrimSpace(workersDir) == "" {
 		workersDir = filepath.Join(cfg.DataDir, "workers")
@@ -91,6 +101,7 @@ func NewEngine(store *db.Store, reg *router.Registry, cronReloader interface{ Re
 		adminToken:   cfg.AdminToken,
 		workerSvc:    NewWorkerService(store, reg, cronReloader, workersDir, workerTmpDir, runtimeLibDir),
 		dashboardSvc: NewDashboardService(store),
+		storageKvSvc: adminStorage.NewKVService(opts.KVStore),
 	}
 	e := gin.New()
 	e.Use(gin.Recovery(), common.RequestIDMiddleware())
@@ -119,6 +130,11 @@ func NewEngine(store *db.Store, reg *router.Registry, cronReloader interface{ Re
 
 		api.GET("/dashboard/metrics", s.getDashboardMetrics)
 		api.GET("/dashboard/workers/trend", s.getDashboardWorkerTrend)
+
+		api.GET("/kv/metrics", s.getStorageKVMetrics)
+		api.GET("/kv/keys", s.listStorageKVKeys)
+		api.GET("/kv/key", s.getStorageKVKeyDetail)
+		api.POST("/kv/key/delete", s.deleteStorageKVKey)
 
 		api.GET("/workers/:id/logs", s.listWorkerLogs)
 		api.GET("/workers/:id/crons", s.listWorkerCrons)
