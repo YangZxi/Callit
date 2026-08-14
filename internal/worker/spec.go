@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"callit/internal/model"
 )
@@ -80,31 +81,56 @@ func (s WorkerSpec) WriteMetadata() error {
 	return writeFileAtomically(s.MetadataPath, raw, 0o644)
 }
 
-func (s WorkerSpec) ListCodeFiles() ([]string, error) {
-	return ListFiles(s.WorkerCodeDir)
+func (s WorkerSpec) ListCodeFiles(maxDirectoryDepth int) ([]string, error) {
+	return ListFiles(s.WorkerCodeDir, maxDirectoryDepth)
 }
 
 func (s WorkerSpec) CodeFilePath(filename string) string {
 	return filepath.Join(s.WorkerCodeDir, filename)
 }
 
-func ListFiles(dir string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []string{}, nil
+func ListFiles(dir string, maxDirectoryDepth int) ([]string, error) {
+	entries := make([]string, 0)
+	err := filepath.WalkDir(dir, func(currentPath string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if currentPath == dir && os.IsNotExist(walkErr) {
+				return nil
+			}
+			return walkErr
 		}
+		if currentPath == dir {
+			return nil
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		relative, err := filepath.Rel(dir, currentPath)
+		if err != nil {
+			return err
+		}
+		relative = filepath.ToSlash(relative)
+		segmentCount := len(strings.Split(relative, "/"))
+		if entry.IsDir() {
+			if segmentCount+1 > maxDirectoryDepth {
+				return filepath.SkipDir
+			}
+			entries = append(entries, relative+"/")
+			return nil
+		}
+		if segmentCount <= maxDirectoryDepth {
+			entries = append(entries, relative)
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	files := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		files = append(files, entry.Name())
-	}
-	sort.Strings(files)
-	return files, nil
+	sort.Strings(entries)
+	return entries, nil
 }
 
 func RenameCodeFile(dir string, filename string, newFilename string) error {

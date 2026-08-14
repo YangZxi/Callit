@@ -103,3 +103,21 @@ func TestLoadUsesDefaultRedisAddr(t *testing.T) {
 		t.Fatalf("期望默认 RedisAddr 为 redis:6379，实际为 %q", cfg.RedisAddr)
 	}
 }
+
+func TestLoadUsesWorkerMaxDirDepth(t *testing.T) {
+	t.Setenv("WORKER_MAX_DIR_DEPTH", "5")
+	if got := Load().WorkerMaxDirDepth; got != 5 {
+		t.Fatalf("期望 WorkerMaxDirDepth 为 5，实际为 %d", got)
+	}
+}
+
+func TestLoadUsesDefaultWorkerMaxDirDepthForInvalidValue(t *testing.T) {
+	for _, value := range []string{"", "invalid", "0", "-1"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("WORKER_MAX_DIR_DEPTH", value)
+			if got := Load().WorkerMaxDirDepth; got != 3 {
+				t.Fatalf("非法值 %q 应回退为 3，实际为 %d", value, got)
+			}
+		})
+	}
+}

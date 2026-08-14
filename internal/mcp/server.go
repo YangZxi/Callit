@@ -97,7 +97,7 @@ func NewHandler(store *db.Store, reg *router.Registry, cronReloader interface{ R
 	}
 	h := &Handler{
 		cfg:     cfg,
-		service: adminsvc.NewWorkerService(store, reg, cronReloader, workersDir, workerTmpDir, runtimeLibDir),
+		service: adminsvc.NewWorkerService(store, reg, cronReloader, workersDir, workerTmpDir, runtimeLibDir, cfg.WorkerMaxDirDepth),
 	}
 	h.server = h.newSDKServer()
 
@@ -215,7 +215,7 @@ func (h *Handler) newSDKServer() *sdkmcp.Server {
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "list_worker_files",
-		Description: "列出指定 Worker 根目录下的文件名列表。参数必须提供 worker_id。",
+		Description: "递归列出指定 Worker 代码目录中的相对路径。参数必须提供 worker_id；文件以相对路径返回，目录以 / 结尾返回，Worker 代码根目录按第 1 层计算。",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, input workerIDInput) (*sdkmcp.CallToolResult, listWorkerFilesOutput, error) {
 		files, err := h.service.ListWorkerFiles(ctx, input.WorkerID)
 		if err != nil {
@@ -226,7 +226,7 @@ func (h *Handler) newSDKServer() *sdkmcp.Server {
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "get_worker_file",
-		Description: "读取指定 Worker 文件内容。参数必须提供 worker_id 和 filename；filename 为`list_worker_files`中得到的文件名，返回文本内容或图片预览信息。",
+		Description: "读取指定 Worker 文件内容。参数必须提供 worker_id 和 filename；filename 为 list_worker_files 中得到的文件相对路径，不能是以 / 结尾的目录，返回文本内容或图片预览信息。",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, input workerFileInput) (*sdkmcp.CallToolResult, getWorkerFileOutput, error) {
 		file, err := h.service.GetWorkerFile(ctx, input.WorkerID, input.Filename)
 		if err != nil {
@@ -237,7 +237,7 @@ func (h *Handler) newSDKServer() *sdkmcp.Server {
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "upload_worker_file",
-		Description: "向指定 Worker 写入文件内容，适合上传或新建文件。参数必须提供 worker_id、filename、content；如果同名文件已存在会直接覆盖，filename 不支持`/`。",
+		Description: "向指定 Worker 写入文件或创建目录。参数必须提供 worker_id、filename、content；filename 以 / 结尾时创建目录并忽略 content，否则创建或覆盖相对路径文件；缺少的父目录会自动创建。路径开头的 / 和每个路径段两端空格会自动移除，非法格式会被拒绝；默认最多 3 层且可由服务端环境变量调整。",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, input workerFileWriteInput) (*sdkmcp.CallToolResult, saveWorkerFileOutput, error) {
 		files, err := h.service.SaveWorkerFileContent(ctx, input.WorkerID, input.Filename, input.Content)
 		if err != nil {
@@ -248,7 +248,7 @@ func (h *Handler) newSDKServer() *sdkmcp.Server {
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "update_worker_file",
-		Description: "更新指定 Worker 文件内容。参数必须提供 worker_id、filename、content；行为是直接覆盖现有文件，filename 不支持`/`，如果文件不存在则会创建新文件。",
+		Description: "更新指定 Worker 文件内容或创建目录。参数必须提供 worker_id、filename、content；filename 以 / 结尾时创建目录并忽略 content，否则直接覆盖相对路径文件，文件或父目录不存在时会自动创建。路径开头的 / 和每个路径段两端空格会自动移除，非法格式会被拒绝；默认最多 3 层且可由服务端环境变量调整。",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, input workerFileWriteInput) (*sdkmcp.CallToolResult, saveWorkerFileOutput, error) {
 		files, err := h.service.SaveWorkerFileContent(ctx, input.WorkerID, input.Filename, input.Content)
 		if err != nil {
@@ -259,7 +259,7 @@ func (h *Handler) newSDKServer() *sdkmcp.Server {
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        "delete_worker_file",
-		Description: "删除指定 Worker 根目录下的文件。参数必须提供 worker_id 和 filename；filename 为`list_worker_files`中得到的文件名，且不能删除 Worker 入口文件“main.py 或 main.js”。",
+		Description: "删除指定 Worker 文件或目录。参数必须提供 worker_id 和 filename；filename 应来自 list_worker_files，目录路径以 / 结尾。删除目录会递归删除其中全部文件和子目录，执行前必须确认；不能删除 Worker 根入口文件 main.py 或 main.js。",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, input workerFileInput) (*sdkmcp.CallToolResult, deleteWorkerFileOutput, error) {
 		if err := h.service.DeleteWorkerFile(ctx, input.WorkerID, input.Filename); err != nil {
 			return nil, deleteWorkerFileOutput{}, err

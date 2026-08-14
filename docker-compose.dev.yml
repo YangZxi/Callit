@@ -14,6 +14,7 @@ services:
       WORKERS_DIR: /app/data/workers
       WORKER_RUNNING_TEMP_DIR: /app/data/tmp
       RUNTIME_LIB_DIR: /app/data/.lib
+      WORKER_MAX_DIR_DEPTH: ${WORKER_MAX_DIR_DEPTH:-3}
       TZ: ${TZ:-Asia/Shanghai}
       # - ENABLE_CGROUP_V2=true # 启用后，还需要挂载 /sys/fs/cgrou
     ports:

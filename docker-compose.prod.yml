@@ -5,6 +5,7 @@ services:
     environment:
       # - ADMIN_PREFIX=admin   # 默认值 admin
       - ADMIN_TOKEN=   # 在生产环境中请设置一个强随机值
+      # - WORKER_MAX_DIR_DEPTH=3 # Worker 代码根目录计为第 1 层
       # - TZ=Asia/Shanghai
       # - ENABLE_CGROUP_V2=true # 启用后，还需要挂载 /sys/fs/cgrou
     ports:

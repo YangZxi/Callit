@@ -1,5 +1,5 @@
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Chip, ListBox, toast } from "@heroui/react";
+import { Button, Chip, toast } from "@heroui/react";
 import Editor, { DiffEditor, MonacoDiffEditor, OnMount } from "@monaco-editor/react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { IDisposable } from "monaco-editor";
@@ -9,9 +9,9 @@ import EditorPanelAction from "@/components/editor-panel-action";
 import HttpDrawer from "@/components/http-drawer";
 import XModal from "@/components/modal";
 import WorkerLogList, { WorkerLogItem } from "@/components/worker-log-list";
+import WorkerFileTree from "@/components/worker-file-tree";
 import { Icon } from "@iconify/react";
 import { useTheme } from "@/lib/theme";
-import { Button } from "@heroui/react";
 
 type WorkerItem = {
   id: string;
@@ -62,11 +62,21 @@ function buildDiffFilename(original: string): string {
   return `${original.slice(0, dotIndex)}${marker}${original.slice(dotIndex)}`;
 }
 
+function normalizeWorkerPathInput(raw: string): string {
+  const trimmed = raw.trim();
+  const isDirectory = trimmed.endsWith("/");
+  const withoutLeadingSlash = trimmed.replace(/^\/+/, "");
+  const pathWithoutMarker = isDirectory ? withoutLeadingSlash.slice(0, -1) : withoutLeadingSlash;
+  const normalized = pathWithoutMarker.split("/").map((segment) => segment.trim()).join("/");
+  return isDirectory ? `${normalized}/` : normalized;
+}
+
 export default function WorkerDetailPage() {
   const navigate = useNavigate();
   const { id = "" } = useParams();
   const { isDark } = useTheme();
   const uploadRef = useRef<HTMLInputElement | null>(null);
+  const uploadDirectoryRef = useRef("");
   const saveCurrentFileRef = useRef<(() => Promise<void>) | null>(null);
   const diffEditorChangeRef = useRef<IDisposable | null>(null);
 
@@ -83,13 +93,14 @@ export default function WorkerDetailPage() {
   const [fileBusy, setFileBusy] = useState(false);
   const [fnBusy, setFnBusy] = useState(false);
   const [logModalOpen, setLogModalOpen] = useState(false);
-  const [deleteFileConfirmOpen, setDeleteFileConfirmOpen] = useState(false);
+  const [packageDeleteTarget, setPackageDeleteTarget] = useState("");
+  const [directoryDeleteTarget, setDirectoryDeleteTarget] = useState("");
+  const [treeRevealPath, setTreeRevealPath] = useState("");
   const [logLoading, setLogLoading] = useState(false);
   const [logPage, setLogPage] = useState(1);
   const [logTotal, setLogTotal] = useState(0);
   const [logItems, setLogItems] = useState<WorkerLogItem[]>([]);
 
-  const selectedKeys = useMemo(() => (selectedFile ? new Set<string>([selectedFile]) : new Set<string>()), [selectedFile]);
   const defaultRunUrl = useMemo(() => {
     if (!workerInfo) return "";
     let fullUrl = `${window.location.origin}${workerInfo.route}`;
@@ -99,6 +110,7 @@ export default function WorkerDetailPage() {
     return fullUrl;
   }, [workerInfo]);
   const isDiffMode = activeDiffFile !== "";
+  const mainFilename = workerInfo?.runtime === "node" ? "main.js" : "main.py";
   const logTotalPages = useMemo(() => Math.max(1, Math.ceil(logTotal / workerLogsPageSize)), [logTotal]);
 
   const loadWorkerInfo = useCallback(async () => {
@@ -119,22 +131,21 @@ export default function WorkerDetailPage() {
 
   const fetchFileContent = useCallback(async (filename: string, options?: { hideToast?: boolean }) => {
     const target = encodeURIComponent(filename);
-    return api.get<FileContentResp>(`/workers/${id}/files/${target}`, options);
+    return api.get<FileContentResp>(`/workers/${id}/file?filename=${target}`, options);
   }, [id]);
 
   const loadFiles = useCallback(async (prefer?: string) => {
     const data = await api.get<{ files: string[] }>(`/workers/${id}/files`);
     const nextAllFiles = data.files || [];
-    const visibleFiles = nextAllFiles
-      .filter((filename) => !/\.diff(?:\.[^./\\]+)?$/.test(filename))
-      .sort((a, b) => {
-        const aMain = a.startsWith("main.");
-        const bMain = b.startsWith("main.");
-        if (aMain && !bMain) return -1;
-        if (!aMain && bMain) return 1;
-        return a.localeCompare(b);
-      });
-    setFiles(visibleFiles);
+    const visibleEntries = nextAllFiles.filter((filename) => !/\.diff(?:\.[^./\\]+)?$/.test(filename));
+    const visibleFiles = visibleEntries.filter((entry) => !entry.endsWith("/")).sort((a, b) => {
+      const aMain = a === "main.py" || a === "main.js";
+      const bMain = b === "main.py" || b === "main.js";
+      if (aMain && !bMain) return -1;
+      if (!aMain && bMain) return 1;
+      return a.localeCompare(b);
+    });
+    setFiles(visibleEntries);
 
     if (visibleFiles.length === 0) {
       setSelectedFile("");
@@ -146,7 +157,8 @@ export default function WorkerDetailPage() {
       return;
     }
 
-    if (prefer && visibleFiles.includes(prefer)) {
+    if (prefer) setTreeRevealPath(prefer);
+    if (prefer && !prefer.endsWith("/") && visibleFiles.includes(prefer)) {
       setSelectedFile(prefer);
       return;
     }
@@ -308,47 +320,69 @@ export default function WorkerDetailPage() {
     };
   }, []);
 
-  const createFile = async () => {
-    const filename = window.prompt("输入新文件名（例如 helper.py）", "");
+  const createFile = async (directory = "") => {
+    const filename = window.prompt(
+      directory ? `在 ${directory} 中输入新文件名` : "输入相对路径（目录以 / 结尾，例如 src/ 或 src/helper.py）",
+      "",
+    );
     if (!filename) return;
-    const clean = filename.trim();
+    const clean = normalizeWorkerPathInput(filename);
     if (!clean) return;
+    if (directory && clean.endsWith("/")) {
+      toast.warning("请输入文件名");
+      return;
+    }
+    const targetPath = normalizeWorkerPathInput(`${directory}${clean}`);
 
     setFileBusy(true);
     try {
       await api.post<{ files: string[] }>(`/workers/${id}/files/update`, {
-        filename: clean,
+        filename: targetPath,
         content: "",
       });
-      await loadFiles(clean);
-      await loadFileContent(clean);
+      await loadFiles(targetPath);
     } finally {
       setFileBusy(false);
     }
   };
 
-  const performDeleteCurrentFile = useCallback(async () => {
-    if (!selectedFile || fileBusy) return;
+  const performDeleteEntry = useCallback(async (entry: string) => {
+    if (!entry || fileBusy) return;
     setFileBusy(true);
     try {
       await api.post<{ ok: boolean }>(`/workers/${id}/files/delete`, {
-        filename: selectedFile,
+        filename: entry,
       });
+      if (selectedFile === entry || (entry.endsWith("/") && selectedFile.startsWith(entry))) {
+        setSelectedFile("");
+        setContent("");
+        setOriginContent("");
+        setActiveDiffFile("");
+        setPreviewDataURL("");
+      }
       await loadFiles();
     } finally {
       setFileBusy(false);
     }
-  }, [selectedFile, fileBusy, id, loadFiles]);
+  }, [fileBusy, id, loadFiles, selectedFile]);
 
-  const deleteCurrentFile = async () => {
-    if (!selectedFile || fileBusy) return;
-    if (selectedFile === "package.json") {
-      setDeleteFileConfirmOpen(true);
+  const requestDeleteEntry = useCallback(async (entry: string) => {
+    if (!entry || fileBusy || entry === mainFilename) return;
+    if (entry.endsWith("/")) {
+      setDirectoryDeleteTarget(entry);
       return;
     }
-    const ok = window.confirm(`确认删除文件 ${selectedFile} ？`);
+    if (entry === "package.json") {
+      setPackageDeleteTarget(entry);
+      return;
+    }
+    const ok = window.confirm(`确认删除文件 ${entry} ？`);
     if (!ok) return;
-    await performDeleteCurrentFile();
+    await performDeleteEntry(entry);
+  }, [fileBusy, mainFilename, performDeleteEntry]);
+
+  const deleteCurrentFile = async () => {
+    await requestDeleteEntry(selectedFile);
   };
 
   const renameCurrentFile = async () => {
@@ -377,20 +411,20 @@ export default function WorkerDetailPage() {
   const uploadFiles = async (event: ChangeEvent<HTMLInputElement>) => {
     const selected = event.target.files;
     if (!selected || selected.length === 0) return;
+    const directory = uploadDirectoryRef.current;
+    const uploadedFirst = normalizeWorkerPathInput(`${directory}${selected[0]?.name || ""}`);
     setFileBusy(true);
     try {
       const formData = new FormData();
       Array.from(selected).forEach((file) => {
         formData.append("files", file);
       });
-      const data = await api.post<{ files: string[] }>(`/workers/${id}/files/upload`, formData);
-      const uploadedFirst = data.files?.[0] || "";
+      const directoryQuery = directory ? `?directory=${encodeURIComponent(directory)}` : "";
+      await api.post<{ files: string[] }>(`/workers/${id}/files/upload${directoryQuery}`, formData);
       await loadFiles(uploadedFirst || undefined);
-      if (uploadedFirst) {
-        await loadFileContent(uploadedFirst);
-      }
     } finally {
       setFileBusy(false);
+      uploadDirectoryRef.current = "";
       event.target.value = "";
     }
   };
@@ -474,41 +508,39 @@ export default function WorkerDetailPage() {
           </div>
         </div>
         <div className="flex min-h-0 flex-1">
-          <aside className="flex min-h-0 w-[150px] shrink-0 flex-col border-r border-default-200">
+          <aside className="flex min-h-0 w-[220px] shrink-0 flex-col border-r border-default-200">
             <div className="p-2 border-b border-default-200 flex flex-col gap-2">
-              <Button className="w-full" size="sm" variant="tertiary" onPress={() => uploadRef.current?.click()}>
+              <Button
+                className="w-full"
+                size="sm"
+                variant="tertiary"
+                onPress={() => {
+                  uploadDirectoryRef.current = "";
+                  uploadRef.current?.click();
+                }}
+              >
                 上传文件
               </Button>
-              <Button className="w-full" isPending={fileBusy} size="sm" variant="tertiary" onPress={createFile}>
+              <Button className="w-full" isPending={fileBusy} size="sm" variant="tertiary" onPress={() => void createFile()}>
                 新建文件
               </Button>
               <input ref={uploadRef} multiple className="hidden" type="file" onChange={uploadFiles} />
             </div>
             <div className="flex-1 min-h-0 overflow-auto">
-              <ListBox
-                aria-label="Worker 文件列表"
-                className="p-1"
-                selectedKeys={selectedKeys}
-                selectionMode="single"
-                onSelectionChange={(keys) => {
-                  console.log("selected keys", keys);
-                  if (keys === "all") return;
-                  const first = Array.from(keys)[0];
-                  if (typeof first === "string") {
-                    setSelectedFile(first);
-                  }
+              <WorkerFileTree
+                entries={files}
+                selectedFile={selectedFile}
+                mainFilename={mainFilename}
+                revealPath={treeRevealPath}
+                disabled={fileBusy}
+                onSelectFile={setSelectedFile}
+                onRequestUpload={(directory) => {
+                  uploadDirectoryRef.current = directory;
+                  uploadRef.current?.click();
                 }}
-              >
-                {files.map((file) => (
-                  <ListBox.Item 
-                    className="break-all"
-                    key={file} id={file} textValue={file}
-                  >
-                    {file}
-                    <ListBox.ItemIndicator />
-                  </ListBox.Item>
-                ))}
-              </ListBox>
+                onRequestCreateFile={(directory) => void createFile(directory)}
+                onRequestDelete={(entry) => void requestDeleteEntry(entry)}
+              />
             </div>
           </aside>
 
@@ -612,35 +644,35 @@ export default function WorkerDetailPage() {
         </div>
       </div>
       <XModal
-        isOpen={deleteFileConfirmOpen}
+        isOpen={packageDeleteTarget !== ""}
         size="lg"
         header="删除 package.json 提示"
         isDismissable={!fileBusy}
         isKeyboardDismissDisabled={fileBusy}
         onOpenChange={(open) => {
           if (fileBusy) return;
-          setDeleteFileConfirmOpen(open);
+          if (!open) setPackageDeleteTarget("");
         }}
         footer={
           <>
             <Button
               variant="secondary"
               isDisabled={fileBusy}
-              onPress={() => setDeleteFileConfirmOpen(false)}
+              onPress={() => setPackageDeleteTarget("")}
             >
               取消
             </Button>
             <Button
-              variant="primary"
+              variant="danger"
               isPending={fileBusy}
               onPress={() => {
                 void (async () => {
-                  await performDeleteCurrentFile();
-                  setDeleteFileConfirmOpen(false);
+                  await performDeleteEntry(packageDeleteTarget);
+                  setPackageDeleteTarget("");
                 })();
               }}
             >
-              知道了
+              删除
             </Button>
           </>
         }
@@ -648,6 +680,44 @@ export default function WorkerDetailPage() {
         <p className="text-sm leading-6 text-default-700">
           删除 package.json 文件会使 Worker 转为 CommonJS，ESM 中的特性将不再可用，
           你需要修改 JS 代码为 CJS 的标准导出和导入后 Worker 才能正常运行
+        </p>
+      </XModal>
+      <XModal
+        isOpen={directoryDeleteTarget !== ""}
+        size="lg"
+        header="删除目录"
+        isDismissable={!fileBusy}
+        isKeyboardDismissDisabled={fileBusy}
+        onOpenChange={(open) => {
+          if (fileBusy) return;
+          if (!open) setDirectoryDeleteTarget("");
+        }}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              isDisabled={fileBusy}
+              onPress={() => setDirectoryDeleteTarget("")}
+            >
+              取消
+            </Button>
+            <Button
+              variant="danger"
+              isPending={fileBusy}
+              onPress={() => {
+                void (async () => {
+                  await performDeleteEntry(directoryDeleteTarget);
+                  setDirectoryDeleteTarget("");
+                })();
+              }}
+            >
+              删除目录
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm leading-6 text-default-700">
+          删除目录 {directoryDeleteTarget} 会同时移除目录下的所有文件和目录，此操作无法撤销。
         </p>
       </XModal>
       <XModal

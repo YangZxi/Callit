@@ -288,3 +288,93 @@ func TestCreateAndUpdateWorkerTools(t *testing.T) {
 		t.Fatalf("metadata.json 未同步更新: %#v", metadata)
 	}
 }
+
+func TestWorkerFileToolsSupportDirectories(t *testing.T) {
+	store := openMCPTestStore(t)
+	createMCPTestWorker(t, store, model.Worker{
+		ID:        "worker-mcp-directories",
+		Name:      "目录 Worker",
+		Runtime:   "python",
+		Route:     "/mcp-directories",
+		TimeoutMS: 3000,
+		Enabled:   true,
+	})
+	dataDir := t.TempDir()
+	cfg := config.Config{
+		DataDir:           dataDir,
+		WorkerMaxDirDepth: 3,
+		AppConfig: config.AppConfig{
+			MCP_Enable: true,
+			MCP_Token:  "mcp-token",
+		},
+	}
+	handler := NewHandler(store, router.New(), nil, &cfg)
+	callTool := func(id int, name string, arguments map[string]any) *httptest.ResponseRecorder {
+		return doMCPRequest(t, handler, "mcp-token", map[string]any{
+			"jsonrpc": "2.0",
+			"id":      id,
+			"method":  "tools/call",
+			"params": map[string]any{
+				"name":      name,
+				"arguments": arguments,
+			},
+		})
+	}
+
+	for id, input := range []map[string]any{
+		{"worker_id": "worker-mcp-directories", "filename": "src/lib/", "content": "ignored"},
+		{"worker_id": "worker-mcp-directories", "filename": "src/lib/helper.py", "content": "VALUE = 1"},
+	} {
+		resp := callTool(id+1, "upload_worker_file", input)
+		if resp.Code != http.StatusOK || bytes.Contains(resp.Body.Bytes(), []byte(`"isError":true`)) {
+			t.Fatalf("创建目录或嵌套文件失败: code=%d body=%s", resp.Code, resp.Body.String())
+		}
+	}
+
+	listResp := callTool(3, "list_worker_files", map[string]any{"worker_id": "worker-mcp-directories"})
+	var listBody struct {
+		Result struct {
+			StructuredContent listWorkerFilesOutput `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(listResp.Body.Bytes(), &listBody); err != nil {
+		t.Fatalf("解析文件列表失败: %v", err)
+	}
+	want := []string{"src/", "src/lib/", "src/lib/helper.py"}
+	if len(listBody.Result.StructuredContent.Files) != len(want) {
+		t.Fatalf("文件列表不正确: %#v", listBody.Result.StructuredContent.Files)
+	}
+	for i := range want {
+		if listBody.Result.StructuredContent.Files[i] != want[i] {
+			t.Fatalf("文件列表不正确: got=%#v want=%#v", listBody.Result.StructuredContent.Files, want)
+		}
+	}
+
+	getResp := callTool(4, "get_worker_file", map[string]any{
+		"worker_id": "worker-mcp-directories",
+		"filename":  "src/lib/helper.py",
+	})
+	if !bytes.Contains(getResp.Body.Bytes(), []byte(`"content":"VALUE = 1"`)) {
+		t.Fatalf("读取嵌套文件失败: body=%s", getResp.Body.String())
+	}
+
+	overDepthResp := callTool(5, "update_worker_file", map[string]any{
+		"worker_id": "worker-mcp-directories",
+		"filename":  "src/lib/deep/helper.py",
+		"content":   "",
+	})
+	if !bytes.Contains(overDepthResp.Body.Bytes(), []byte(`"isError":true`)) {
+		t.Fatalf("超过层级限制应返回工具错误: body=%s", overDepthResp.Body.String())
+	}
+
+	deleteResp := callTool(6, "delete_worker_file", map[string]any{
+		"worker_id": "worker-mcp-directories",
+		"filename":  "src/",
+	})
+	if bytes.Contains(deleteResp.Body.Bytes(), []byte(`"isError":true`)) {
+		t.Fatalf("递归删除目录失败: body=%s", deleteResp.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "workers", "worker-mcp-directories", "code", "src")); !os.IsNotExist(err) {
+		t.Fatalf("MCP 删除后目录仍存在: %v", err)
+	}
+}

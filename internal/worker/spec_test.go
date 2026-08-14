@@ -86,12 +86,48 @@ func TestWorkerSpecListCodeFilesOnlyReadsCodeDir(t *testing.T) {
 		t.Fatalf("写入 root 文件失败: %v", err)
 	}
 
-	files, err := spec.ListCodeFiles()
+	files, err := spec.ListCodeFiles(3)
 	if err != nil {
 		t.Fatalf("ListCodeFiles 失败: %v", err)
 	}
 	if len(files) != 1 || files[0] != "index.html" {
 		t.Fatalf("代码目录文件列表不正确: %#v", files)
+	}
+}
+
+func TestWorkerSpecListCodeFilesIncludesDirectoriesAndRespectsDepth(t *testing.T) {
+	spec := NewWorkerSpec(filepath.Join(t.TempDir(), "workers"), t.TempDir(), model.Worker{ID: "nested"})
+	if err := spec.EnsureLayout(); err != nil {
+		t.Fatalf("EnsureLayout 失败: %v", err)
+	}
+	for _, directory := range []string{"empty", "src/lib", "src/lib/deep"} {
+		if err := os.MkdirAll(filepath.Join(spec.WorkerCodeDir, directory), 0o755); err != nil {
+			t.Fatalf("创建目录失败: %v", err)
+		}
+	}
+	for filename, content := range map[string]string{
+		"main.js":                "main",
+		"src/helper.js":          "helper",
+		"src/lib/format.js":      "format",
+		"src/lib/deep/hidden.js": "hidden",
+	} {
+		if err := os.WriteFile(filepath.Join(spec.WorkerCodeDir, filename), []byte(content), 0o644); err != nil {
+			t.Fatalf("写入文件失败: %v", err)
+		}
+	}
+
+	entries, err := spec.ListCodeFiles(3)
+	if err != nil {
+		t.Fatalf("ListCodeFiles 失败: %v", err)
+	}
+	want := []string{"empty/", "main.js", "src/", "src/helper.js", "src/lib/", "src/lib/format.js"}
+	if len(entries) != len(want) {
+		t.Fatalf("文件列表长度不正确: got=%#v want=%#v", entries, want)
+	}
+	for i := range want {
+		if entries[i] != want[i] {
+			t.Fatalf("文件列表不正确: got=%#v want=%#v", entries, want)
+		}
 	}
 }
 

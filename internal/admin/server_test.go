@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -189,6 +190,93 @@ func (s *fakeStorageKVStore) Stats(_ context.Context) (adminStorage.KVStats, err
 		UsedMemoryHuman:  "1K",
 		KVKeys:           2,
 	}, nil
+}
+
+func TestAdminWorkerFileQuerySupportsNestedPath(t *testing.T) {
+	store := openAdminTestStore(t)
+	createAdminTestWorker(t, store, "worker-nested-file")
+	dataDir := t.TempDir()
+	codeDir := filepath.Join(dataDir, "workers", "worker-nested-file", "code", "src", "lib")
+	if err := os.MkdirAll(codeDir, 0o755); err != nil {
+		t.Fatalf("创建嵌套目录失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(codeDir, "helper.py"), []byte("VALUE = 1"), 0o644); err != nil {
+		t.Fatalf("写入嵌套文件失败: %v", err)
+	}
+
+	cfg := config.Config{
+		AdminPrefix:       "/admin",
+		AdminToken:        "test-token",
+		DataDir:           dataDir,
+		WorkerMaxDirDepth: 3,
+	}
+	engine := NewEngine(store, router.New(), nil, &cfg)
+	filename := url.QueryEscape("src/lib/helper.py")
+	resp := doAdminJSONRequest(t, engine, http.MethodGet, "/admin/api/workers/worker-nested-file/file?filename="+filename, nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("读取嵌套文件应返回 200: code=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		Data FileContent `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("解析嵌套文件响应失败: %v", err)
+	}
+	if body.Data.Filename != "src/lib/helper.py" || body.Data.Content != "VALUE = 1" {
+		t.Fatalf("嵌套文件响应不正确: %#v", body.Data)
+	}
+
+	directoryResp := doAdminJSONRequest(t, engine, http.MethodGet, "/admin/api/workers/worker-nested-file/file?filename="+url.QueryEscape("src/lib/"), nil)
+	if directoryResp.Code != http.StatusBadRequest {
+		t.Fatalf("读取目录应返回 400: code=%d body=%s", directoryResp.Code, directoryResp.Body.String())
+	}
+}
+
+func TestAdminWorkerUploadSupportsTargetDirectory(t *testing.T) {
+	store := openAdminTestStore(t)
+	createAdminTestWorker(t, store, "worker-directory-upload")
+	dataDir := t.TempDir()
+	cfg := config.Config{
+		AdminPrefix:       "/admin",
+		AdminToken:        "test-token",
+		DataDir:           dataDir,
+		WorkerMaxDirDepth: 3,
+	}
+	engine := NewEngine(store, router.New(), nil, &cfg)
+
+	var payload bytes.Buffer
+	writer := multipart.NewWriter(&payload)
+	part, err := writer.CreateFormFile("files", " helper.py ")
+	if err != nil {
+		t.Fatalf("创建 multipart 文件失败: %v", err)
+	}
+	if _, err := part.Write([]byte("VALUE = 1")); err != nil {
+		t.Fatalf("写入 multipart 文件失败: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("关闭 multipart writer 失败: %v", err)
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/admin/api/workers/worker-directory-upload/files/upload?directory="+url.QueryEscape("/src/lib/"),
+		&payload,
+	)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer test-token")
+	resp := httptest.NewRecorder()
+	engine.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("上传到指定目录应返回 200: code=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	content, err := os.ReadFile(filepath.Join(dataDir, "workers", "worker-directory-upload", "code", "src", "lib", "helper.py"))
+	if err != nil {
+		t.Fatalf("读取上传文件失败: %v", err)
+	}
+	if string(content) != "VALUE = 1" {
+		t.Fatalf("上传文件内容不正确: %q", string(content))
+	}
 }
 
 func TestAdminKVAPIRequiresAuth(t *testing.T) {

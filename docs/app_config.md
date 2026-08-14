@@ -43,6 +43,12 @@ Admin 服务访问前缀。程序会自动保证以 `/` 开头，并去掉末尾
 - 类型：`string`
 - 默认值：`info`
 
+### `WORKER_MAX_DIR_DEPTH`
+Worker 代码目录允许的最大目录层级，Worker 代码根目录（`main.py` / `main.js` 所在目录）计为第 1 层。
+- 类型：`int`
+- 默认值：`3`
+- 说明：默认允许文件位于 `src/lib/helper.py`，但不允许位于 `src/lib/deep/helper.py`。非法值或非正数会回退到默认值。
+
 
 ## AppConfig 配置
 

@@ -99,7 +99,7 @@ func NewEngineWithOptions(store *db.Store, reg *router.Registry, cronReloader in
 		dataDir:      cfg.DataDir,
 		workersDir:   workersDir,
 		adminToken:   cfg.AdminToken,
-		workerSvc:    NewWorkerService(store, reg, cronReloader, workersDir, workerTmpDir, runtimeLibDir),
+		workerSvc:    NewWorkerService(store, reg, cronReloader, workersDir, workerTmpDir, runtimeLibDir, cfg.WorkerMaxDirDepth),
 		dashboardSvc: NewDashboardService(store),
 		storageKvSvc: adminStorage.NewKVService(opts.KVStore),
 	}
@@ -143,6 +143,7 @@ func NewEngineWithOptions(store *db.Store, reg *router.Registry, cronReloader in
 		api.POST("/workers/:id/crons/delete", s.deleteWorkerCron)
 
 		api.GET("/workers/:id/files", s.listWorkerFiles)
+		api.GET("/workers/:id/file", s.getFileContentByQuery)
 		api.GET("/workers/:id/files/:filename", s.getFileContent)
 		api.POST("/workers/:id/files/upload", s.uploadFiles)
 		api.POST("/workers/:id/files/update", s.saveFileContent)
@@ -490,7 +491,7 @@ func (s *Server) uploadFiles(c *gin.Context) {
 	}
 
 	fileHeaders := flattenFiles(c.Request.MultipartForm.File)
-	files, err := s.workerSvc.UploadWorkerFiles(c.Request.Context(), id, fileHeaders)
+	files, err := s.workerSvc.UploadWorkerFiles(c.Request.Context(), id, c.Query("directory"), fileHeaders)
 	if err != nil {
 		apiError(c, http.StatusBadRequest, err.Error())
 		return
@@ -513,8 +514,16 @@ func (s *Server) listWorkerFiles(c *gin.Context) {
 }
 
 func (s *Server) getFileContent(c *gin.Context) {
+	s.writeFileContentResponse(c, strings.TrimSpace(c.Param("filename")))
+}
+
+func (s *Server) getFileContentByQuery(c *gin.Context) {
+	s.writeFileContentResponse(c, strings.TrimSpace(c.Query("filename")))
+}
+
+func (s *Server) writeFileContentResponse(c *gin.Context, filename string) {
 	id := c.Param("id")
-	content, err := s.workerSvc.GetWorkerFile(c.Request.Context(), id, strings.TrimSpace(c.Param("filename")))
+	content, err := s.workerSvc.GetWorkerFile(c.Request.Context(), id, filename)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrWorkerNotFound):
@@ -591,59 +600,23 @@ func (s *Server) renameFile(c *gin.Context) {
 		return
 	}
 
-	filename := strings.TrimSpace(req.Filename)
-	newFilename := strings.TrimSpace(req.NewFilename)
-	if filename == "" || newFilename == "" {
-		apiError(c, http.StatusBadRequest, "filename 和 new_filename 不能为空")
-		return
-	} else if filename == newFilename {
-		apiError(c, http.StatusBadRequest, "新文件名不能与原文件名相同")
-		return
-	}
-	if filepath.Base(filename) != filename || strings.Contains(filename, "/") || strings.Contains(filename, "\\") {
-		apiError(c, http.StatusBadRequest, "非法文件名")
-		return
-	}
-	if filepath.Base(newFilename) != newFilename || strings.Contains(newFilename, "/") || strings.Contains(newFilename, "\\") {
-		apiError(c, http.StatusBadRequest, "非法文件名")
-		return
-	}
-
-	worker, err := s.store.Worker.GetByID(c.Request.Context(), id)
+	files, renamedFilename, err := s.workerSvc.RenameWorkerFile(c.Request.Context(), id, req.Filename, req.NewFilename)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			apiError(c, http.StatusNotFound, "函数不存在")
-			return
-		}
-		apiError(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	mainFile := mainFilenameByRuntime(worker.Runtime)
-	if filename == mainFile || newFilename == mainFile {
-		apiError(c, http.StatusBadRequest, "入口文件不能重命名")
-		return
-	}
-
-	functionDir := filepath.Join(s.workersDir, id, "code")
-	if err := renameWorkerFile(functionDir, filename, newFilename); err != nil {
 		switch {
+		case errors.Is(err, ErrWorkerNotFound):
+			apiError(c, http.StatusNotFound, "函数不存在")
+		case errors.Is(err, ErrMainFileDeletion):
+			apiError(c, http.StatusBadRequest, "入口文件不能重命名")
 		case errors.Is(err, workerpkg.ErrSourceFileNotExist):
 			apiError(c, http.StatusNotFound, "文件不存在")
 		case errors.Is(err, workerpkg.ErrTargetFileExists):
 			apiError(c, http.StatusConflict, "文件名已存在")
 		default:
-			apiError(c, http.StatusInternalServerError, fmt.Sprintf("重命名文件失败: %v", err))
+			apiError(c, http.StatusBadRequest, err.Error())
 		}
 		return
 	}
-
-	files, err := listFiles(functionDir)
-	if err != nil {
-		apiError(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	apiSuccess(c, gin.H{"files": files, "filename": newFilename})
+	apiSuccess(c, gin.H{"files": files, "filename": renamedFilename})
 }
 
 func (s *Server) enableWorker(c *gin.Context) {
@@ -859,8 +832,4 @@ func flattenFiles(fileMap map[string][]*multipart.FileHeader) []*multipart.FileH
 		result = append(result, files...)
 	}
 	return result
-}
-
-func renameWorkerFile(functionDir string, filename string, newFilename string) error {
-	return workerpkg.RenameCodeFile(functionDir, filename, newFilename)
 }

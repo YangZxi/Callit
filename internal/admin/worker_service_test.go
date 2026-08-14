@@ -12,7 +12,7 @@ import (
 func TestCreateWorkerCreatesNodeESMTemplateAndPackageJSON(t *testing.T) {
 	store := openAdminTestStore(t)
 	workersDir := filepath.Join(t.TempDir(), "workers")
-	svc := NewWorkerService(store, nil, nil, workersDir, filepath.Join(t.TempDir(), "tmp"), filepath.Join(t.TempDir(), ".lib"))
+	svc := NewWorkerService(store, nil, nil, workersDir, filepath.Join(t.TempDir(), "tmp"), filepath.Join(t.TempDir(), ".lib"), 3)
 
 	created, err := svc.CreateWorker(context.Background(), CreateWorkerInput{
 		Name:      "node-esm",
@@ -44,7 +44,7 @@ func TestCreateWorkerCreatesNodeESMTemplateAndPackageJSON(t *testing.T) {
 func TestDeleteWorkerFileRejectsMainJS(t *testing.T) {
 	store := openAdminTestStore(t)
 	workersDir := filepath.Join(t.TempDir(), "workers")
-	svc := NewWorkerService(store, nil, nil, workersDir, filepath.Join(t.TempDir(), "tmp"), filepath.Join(t.TempDir(), ".lib"))
+	svc := NewWorkerService(store, nil, nil, workersDir, filepath.Join(t.TempDir(), "tmp"), filepath.Join(t.TempDir(), ".lib"), 3)
 
 	created, err := svc.CreateWorker(context.Background(), CreateWorkerInput{
 		Name:      "node-main-protect",
@@ -59,6 +59,70 @@ func TestDeleteWorkerFileRejectsMainJS(t *testing.T) {
 	err = svc.DeleteWorkerFile(context.Background(), created.ID, "main.js")
 	if !errors.Is(err, ErrMainFileDeletion) {
 		t.Fatalf("删除 main.js 应返回 ErrMainFileDeletion，got=%v", err)
+	}
+}
+
+func TestWorkerServiceSupportsNestedFilesAndDirectories(t *testing.T) {
+	store := openAdminTestStore(t)
+	baseDir := t.TempDir()
+	workersDir := filepath.Join(baseDir, "workers")
+	svc := NewWorkerService(store, nil, nil, workersDir, filepath.Join(baseDir, "tmp"), filepath.Join(baseDir, ".lib"), 3)
+	created, err := svc.CreateWorker(context.Background(), CreateWorkerInput{
+		Name:      "nested-files",
+		Runtime:   "python",
+		Route:     "/nested-files",
+		TimeoutMS: 3000,
+	})
+	if err != nil {
+		t.Fatalf("CreateWorker 失败: %v", err)
+	}
+
+	if _, err := svc.SaveWorkerFileContent(context.Background(), created.ID, "empty/", "ignored"); err != nil {
+		t.Fatalf("创建空目录失败: %v", err)
+	}
+	entries, err := svc.SaveWorkerFileContent(context.Background(), created.ID, " / src / lib / helper.py ", "VALUE = 1")
+	if err != nil {
+		t.Fatalf("创建嵌套文件失败: %v", err)
+	}
+	wantEntries := []string{"empty/", "main.py", "src/", "src/lib/", "src/lib/helper.py"}
+	if len(entries) != len(wantEntries) {
+		t.Fatalf("文件列表不正确: got=%#v want=%#v", entries, wantEntries)
+	}
+	for i := range wantEntries {
+		if entries[i] != wantEntries[i] {
+			t.Fatalf("文件列表不正确: got=%#v want=%#v", entries, wantEntries)
+		}
+	}
+
+	content, err := svc.GetWorkerFile(context.Background(), created.ID, "src/lib/helper.py")
+	if err != nil {
+		t.Fatalf("读取嵌套文件失败: %v", err)
+	}
+	if content.Content != "VALUE = 1" || content.Filename != "src/lib/helper.py" {
+		t.Fatalf("嵌套文件内容不正确: %#v", content)
+	}
+	if _, err := svc.GetWorkerFile(context.Background(), created.ID, "src/"); !errors.Is(err, ErrInvalidFilename) {
+		t.Fatalf("读取目录应返回 ErrInvalidFilename，got=%v", err)
+	}
+	if _, err := svc.SaveWorkerFileContent(context.Background(), created.ID, "src/lib/deep/helper.py", ""); !errors.Is(err, ErrInvalidFilename) {
+		t.Fatalf("超过最大层级应返回 ErrInvalidFilename，got=%v", err)
+	}
+
+	_, renamed, err := svc.RenameWorkerFile(context.Background(), created.ID, "src/lib/helper.py", "src/renamed.py")
+	if err != nil {
+		t.Fatalf("重命名嵌套文件失败: %v", err)
+	}
+	if renamed != "src/renamed.py" {
+		t.Fatalf("重命名结果不正确: %q", renamed)
+	}
+	if err := svc.DeleteWorkerFile(context.Background(), created.ID, "src/"); err != nil {
+		t.Fatalf("递归删除目录失败: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(workersDir, created.ID, "code", "src")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("目录及子文件应已删除，got=%v", err)
+	}
+	if err := svc.DeleteWorkerFile(context.Background(), created.ID, "src/"); !errors.Is(err, ErrFileNotFound) {
+		t.Fatalf("重复删除目录应返回 ErrFileNotFound，got=%v", err)
 	}
 }
 

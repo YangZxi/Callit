@@ -33,6 +33,7 @@ type Config struct {
 	WorkersDir           string
 	WorkerRunningTempDir string
 	RuntimeLibDir        string
+	WorkerMaxDirDepth    int
 	MaxFileSize          int64
 
 	// Runtime
@@ -91,6 +92,7 @@ func Load() Config {
 		WorkersDir:           getEnv("WORKERS_DIR", "./data/workers"),
 		WorkerRunningTempDir: getEnv("WORKER_RUNNING_TEMP_DIR", "./data/tmp"),
 		RuntimeLibDir:        getEnv("RUNTIME_LIB_DIR", "./data/.lib"),
+		WorkerMaxDirDepth:    getPositiveInt("WORKER_MAX_DIR_DEPTH", 3),
 
 		MaxFileSize: (1 << 20) * 100, // 100MB
 
@@ -240,6 +242,14 @@ func getInt(key string, def int) int {
 		}
 	}
 	return def
+}
+
+func getPositiveInt(key string, def int) int {
+	value := getInt(key, def)
+	if value <= 0 {
+		return def
+	}
+	return value
 }
 
 func getBool(key string, def bool) bool {

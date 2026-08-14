@@ -39,6 +39,7 @@ type WorkerService struct {
 	workersDir    string
 	workerTmpDir  string
 	runtimeLibDir string
+	maxDirDepth   int
 }
 
 type CreateWorkerInput struct {
@@ -69,7 +70,10 @@ type FileContent struct {
 	PreviewDataURL string `json:"preview_data_url,omitempty"`
 }
 
-func NewWorkerService(store *db.Store, reg *router.Registry, cronReloader interface{ Reload(context.Context) error }, workersDir string, workerTmpDir string, runtimeLibDir string) *WorkerService {
+func NewWorkerService(store *db.Store, reg *router.Registry, cronReloader interface{ Reload(context.Context) error }, workersDir string, workerTmpDir string, runtimeLibDir string, maxDirDepth int) *WorkerService {
+	if maxDirDepth <= 0 {
+		maxDirDepth = 3
+	}
 	return &WorkerService{
 		store:         store,
 		reg:           reg,
@@ -77,6 +81,7 @@ func NewWorkerService(store *db.Store, reg *router.Registry, cronReloader interf
 		workersDir:    workersDir,
 		workerTmpDir:  workerTmpDir,
 		runtimeLibDir: runtimeLibDir,
+		maxDirDepth:   maxDirDepth,
 	}
 }
 
@@ -224,20 +229,32 @@ func (s *WorkerService) ListWorkerFiles(ctx context.Context, id string) ([]strin
 	if err := spec.EnsureLayout(); err != nil {
 		return nil, fmt.Errorf("创建函数目录失败: %w", err)
 	}
-	return spec.ListCodeFiles()
+	return spec.ListCodeFiles(s.maxDirDepth)
 }
 
 func (s *WorkerService) GetWorkerFile(ctx context.Context, id string, filename string) (FileContent, error) {
-	filename = strings.TrimSpace(filename)
-	if err := validateFilename(filename); err != nil {
+	codePath, err := s.parseCodePath(filename)
+	if err != nil {
 		return FileContent{}, err
+	}
+	if codePath.IsDirectory {
+		return FileContent{}, fmt.Errorf("%w: 不能读取目录内容", ErrInvalidFilename)
 	}
 	if _, err := s.GetWorker(ctx, id); err != nil {
 		return FileContent{}, err
 	}
 
 	spec := s.workerSpec(model.Worker{ID: id}, "")
-	target := spec.CodeFilePath(filename)
+	if err := worker.EnsureCodePathHasNoSymlink(spec.WorkerCodeDir, codePath, false); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return FileContent{}, ErrFileNotFound
+		}
+		return FileContent{}, fmt.Errorf("%w: 非法文件路径", ErrInvalidFilename)
+	}
+	target, err := worker.ResolveCodePath(spec.WorkerCodeDir, codePath)
+	if err != nil {
+		return FileContent{}, fmt.Errorf("%w: 非法文件路径", ErrInvalidFilename)
+	}
 	raw, err := os.ReadFile(target)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -246,6 +263,7 @@ func (s *WorkerService) GetWorkerFile(ctx context.Context, id string, filename s
 		return FileContent{}, err
 	}
 
+	filename = codePath.RelativePath
 	mimeType := detectFileMimeType(filename, raw)
 	if strings.HasPrefix(mimeType, "image/") {
 		return FileContent{
@@ -267,8 +285,8 @@ func (s *WorkerService) GetWorkerFile(ctx context.Context, id string, filename s
 }
 
 func (s *WorkerService) SaveWorkerFileContent(ctx context.Context, id string, filename string, content string) ([]string, error) {
-	filename = strings.TrimSpace(filename)
-	if err := validateFilename(filename); err != nil {
+	codePath, err := s.parseCodePath(filename)
+	if err != nil {
 		return nil, err
 	}
 	if _, err := s.GetWorker(ctx, id); err != nil {
@@ -279,14 +297,29 @@ func (s *WorkerService) SaveWorkerFileContent(ctx context.Context, id string, fi
 	if err := spec.EnsureLayout(); err != nil {
 		return nil, fmt.Errorf("创建 Worker 目录失败: %w", err)
 	}
-	target := spec.CodeFilePath(filename)
-	if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
-		return nil, fmt.Errorf("写入文件失败: %w", err)
+	if err := worker.EnsureCodePathHasNoSymlink(spec.WorkerCodeDir, codePath, true); err != nil {
+		return nil, fmt.Errorf("%w: 非法文件路径", ErrInvalidFilename)
 	}
-	return spec.ListCodeFiles()
+	target, err := worker.ResolveCodePath(spec.WorkerCodeDir, codePath)
+	if err != nil {
+		return nil, fmt.Errorf("%w: 非法文件路径", ErrInvalidFilename)
+	}
+	if codePath.IsDirectory {
+		if err := os.MkdirAll(target, 0o755); err != nil {
+			return nil, fmt.Errorf("创建目录失败: %w", err)
+		}
+	} else {
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return nil, fmt.Errorf("创建父目录失败: %w", err)
+		}
+		if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
+			return nil, fmt.Errorf("写入文件失败: %w", err)
+		}
+	}
+	return spec.ListCodeFiles(s.maxDirDepth)
 }
 
-func (s *WorkerService) UploadWorkerFiles(ctx context.Context, id string, fileHeaders []*multipart.FileHeader) ([]string, error) {
+func (s *WorkerService) UploadWorkerFiles(ctx context.Context, id string, directory string, fileHeaders []*multipart.FileHeader) ([]string, error) {
 	if _, err := s.GetWorker(ctx, id); err != nil {
 		return nil, err
 	}
@@ -298,36 +331,146 @@ func (s *WorkerService) UploadWorkerFiles(ctx context.Context, id string, fileHe
 	if err := spec.EnsureLayout(); err != nil {
 		return nil, fmt.Errorf("创建 Worker 目录失败: %w", err)
 	}
+	directoryPrefix := ""
+	if strings.TrimSpace(directory) != "" {
+		directory = strings.TrimSpace(directory)
+		if !strings.HasSuffix(directory, "/") {
+			directory += "/"
+		}
+		directoryPath, err := s.parseCodePath(directory)
+		if err != nil {
+			return nil, err
+		}
+		directoryPrefix = directoryPath.RelativePath + "/"
+	}
 	for _, fh := range fileHeaders {
-		if err := saveUploadedFile(spec.WorkerCodeDir, fh); err != nil {
+		if fh == nil {
+			return nil, fmt.Errorf("文件不能为空")
+		}
+		filename := strings.TrimSpace(fh.Filename)
+		if err := validateFilename(filename); err != nil {
+			return nil, fmt.Errorf("非法文件名: %s", fh.Filename)
+		}
+		codePath, err := s.parseCodePath(directoryPrefix + filename)
+		if err != nil {
+			return nil, err
+		}
+		if err := saveUploadedFile(spec.WorkerCodeDir, codePath, fh); err != nil {
 			return nil, err
 		}
 	}
-	return spec.ListCodeFiles()
+	return spec.ListCodeFiles(s.maxDirDepth)
 }
 
 func (s *WorkerService) DeleteWorkerFile(ctx context.Context, id string, filename string) error {
-	filename = strings.TrimSpace(filename)
-	if err := validateFilename(filename); err != nil {
-		return err
-	}
-
-	worker, err := s.GetWorker(ctx, id)
+	codePath, err := s.parseCodePath(filename)
 	if err != nil {
 		return err
 	}
-	if filename == mainFilenameByRuntime(worker.Runtime) {
+
+	workerModel, err := s.GetWorker(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !codePath.IsDirectory && codePath.RelativePath == mainFilenameByRuntime(workerModel.Runtime) {
 		return ErrMainFileDeletion
 	}
-	spec := s.workerSpec(worker, "")
-	target := spec.CodeFilePath(filename)
-	if err := os.Remove(target); err != nil {
+	spec := s.workerSpec(workerModel, "")
+	if err := worker.EnsureCodePathHasNoSymlink(spec.WorkerCodeDir, codePath, false); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return ErrFileNotFound
 		}
+		return fmt.Errorf("%w: 非法文件路径", ErrInvalidFilename)
+	}
+	target, err := worker.ResolveCodePath(spec.WorkerCodeDir, codePath)
+	if err != nil {
+		return fmt.Errorf("%w: 非法文件路径", ErrInvalidFilename)
+	}
+	info, err := os.Lstat(target)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ErrFileNotFound
+		}
+		return fmt.Errorf("读取文件信息失败: %w", err)
+	}
+	if info.IsDir() {
+		if err := os.RemoveAll(target); err != nil {
+			return fmt.Errorf("删除目录失败: %w", err)
+		}
+		return nil
+	}
+	if err := os.Remove(target); err != nil {
 		return fmt.Errorf("删除文件失败: %w", err)
 	}
 	return nil
+}
+
+func (s *WorkerService) RenameWorkerFile(ctx context.Context, id string, filename string, newFilename string) ([]string, string, error) {
+	source, err := s.parseCodePath(filename)
+	if err != nil {
+		return nil, "", err
+	}
+	destination, err := s.parseCodePath(newFilename)
+	if err != nil {
+		return nil, "", err
+	}
+	if source.IsDirectory || destination.IsDirectory {
+		return nil, "", fmt.Errorf("%w: 目录不支持重命名", ErrInvalidFilename)
+	}
+	if source.RelativePath == destination.RelativePath {
+		return nil, "", fmt.Errorf("新文件名不能与原文件名相同")
+	}
+
+	workerModel, err := s.GetWorker(ctx, id)
+	if err != nil {
+		return nil, "", err
+	}
+	mainFile := mainFilenameByRuntime(workerModel.Runtime)
+	if source.RelativePath == mainFile || destination.RelativePath == mainFile {
+		return nil, "", ErrMainFileDeletion
+	}
+
+	spec := s.workerSpec(workerModel, "")
+	if err := worker.EnsureCodePathHasNoSymlink(spec.WorkerCodeDir, source, false); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, "", worker.ErrSourceFileNotExist
+		}
+		return nil, "", fmt.Errorf("%w: 非法文件路径", ErrInvalidFilename)
+	}
+	if err := worker.EnsureCodePathHasNoSymlink(spec.WorkerCodeDir, destination, true); err != nil {
+		return nil, "", fmt.Errorf("%w: 非法文件路径", ErrInvalidFilename)
+	}
+	sourceAbsolute, err := worker.ResolveCodePath(spec.WorkerCodeDir, source)
+	if err != nil {
+		return nil, "", fmt.Errorf("%w: 非法文件路径", ErrInvalidFilename)
+	}
+	destinationAbsolute, err := worker.ResolveCodePath(spec.WorkerCodeDir, destination)
+	if err != nil {
+		return nil, "", fmt.Errorf("%w: 非法文件路径", ErrInvalidFilename)
+	}
+	sourceInfo, err := os.Stat(sourceAbsolute)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, "", worker.ErrSourceFileNotExist
+		}
+		return nil, "", err
+	}
+	if sourceInfo.IsDir() {
+		return nil, "", fmt.Errorf("%w: 目录不支持重命名", ErrInvalidFilename)
+	}
+	if _, err := os.Stat(destinationAbsolute); err == nil {
+		return nil, "", worker.ErrTargetFileExists
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(destinationAbsolute), 0o755); err != nil {
+		return nil, "", fmt.Errorf("创建父目录失败: %w", err)
+	}
+	if err := os.Rename(sourceAbsolute, destinationAbsolute); err != nil {
+		return nil, "", fmt.Errorf("重命名文件失败: %w", err)
+	}
+	files, err := spec.ListCodeFiles(s.maxDirDepth)
+	return files, destination.RelativePath, err
 }
 
 func (s *WorkerService) reloadWorkersState(ctx context.Context) error {
@@ -384,6 +527,14 @@ func validateFilename(filename string) error {
 	return nil
 }
 
+func (s *WorkerService) parseCodePath(filename string) (worker.CodePath, error) {
+	codePath, err := worker.ParseCodePath(filename, s.maxDirDepth)
+	if err != nil {
+		return worker.CodePath{}, fmt.Errorf("%w: %v", ErrInvalidFilename, err)
+	}
+	return codePath, nil
+}
+
 func detectFileMimeType(filename string, raw []byte) string {
 	extMime := mime.TypeByExtension(strings.ToLower(filepath.Ext(filename)))
 	if extMime != "" {
@@ -395,20 +546,23 @@ func detectFileMimeType(filename string, raw []byte) string {
 	return http.DetectContentType(raw)
 }
 
-func saveUploadedFile(workerDir string, fh *multipart.FileHeader) error {
-	if fh == nil {
-		return fmt.Errorf("文件不能为空")
-	}
-	if err := validateFilename(fh.Filename); err != nil {
-		return fmt.Errorf("非法文件名: %s", fh.Filename)
-	}
+func saveUploadedFile(workerDir string, codePath worker.CodePath, fh *multipart.FileHeader) error {
 	src, err := fh.Open()
 	if err != nil {
 		return fmt.Errorf("打开上传文件失败: %w", err)
 	}
 	defer src.Close()
 
-	target := filepath.Join(workerDir, fh.Filename)
+	if err := worker.EnsureCodePathHasNoSymlink(workerDir, codePath, true); err != nil {
+		return fmt.Errorf("%w: 非法文件路径", ErrInvalidFilename)
+	}
+	target, err := worker.ResolveCodePath(workerDir, codePath)
+	if err != nil {
+		return fmt.Errorf("%w: 非法文件路径", ErrInvalidFilename)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return fmt.Errorf("创建父目录失败: %w", err)
+	}
 	dst, err := os.Create(target)
 	if err != nil {
 		return fmt.Errorf("写入文件失败: %w", err)
@@ -496,8 +650,4 @@ func templateFilenameByRuntime(runtime string) string {
 	default:
 		return ""
 	}
-}
-
-func listFiles(dir string) ([]string, error) {
-	return worker.ListFiles(dir)
 }
