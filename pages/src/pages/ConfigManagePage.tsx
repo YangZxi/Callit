@@ -4,6 +4,7 @@ import { Button } from "@heroui/react";
 
 import api from "@/lib/api";
 import { Input, Switch } from "@/components/heroui";
+import { useTranslation } from "react-i18next";
 
 type AppConfigKey =
   | "MCP_ENABLE"
@@ -38,18 +39,19 @@ const fields: Array<{
   { key: "MCP_TOKEN", label: "MCP Token", placeholder: "mcp-token", type: "text" },
 ];
 
-function labelOfSource(source: AdminConfigItem["source"]) {
+function labelOfSource(source: AdminConfigItem["source"], t: (key: string) => string) {
   switch (source) {
     case "db":
-      return "数据库";
+      return t("config.db");
     case "env":
-      return "环境变量";
+      return t("config.env");
     default:
-      return "默认值";
+      return t("config.default");
   }
 }
 
 export default function ConfigManagePage() {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [values, setValues] = useState<ConfigValues>(defaultValues);
@@ -60,8 +62,8 @@ export default function ConfigManagePage() {
 
   const sourceHint = (key: AppConfigKey) => {
     const meta = sources[key];
-    if (!meta) return "当前来源：未知";
-    return `当前来源：${labelOfSource(meta.source)}`;
+    if (!meta) return t("config.sourceUnknown");
+    return `${t("config.sourceUnknown").replace("未知", "")}${labelOfSource(meta.source, t)}`;
   };
 
   const load = useCallback(async () => {
@@ -96,7 +98,7 @@ export default function ConfigManagePage() {
     setSaving(true);
     try {
       await api.post("/config", { app_config: values });
-      toast.success("保存成功");
+      toast.success(t("config.saveSuccess"));
       await load();
     } finally {
       setSaving(false);
@@ -139,11 +141,11 @@ export default function ConfigManagePage() {
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-default-900">配置管理</h1>
-          <p className="mt-1 text-sm text-default-500">仅支持 AppConfig 白名单项。</p>
+          <h1 className="text-2xl font-semibold text-default-900">{t("config.title")}</h1>
+          <p className="mt-1 text-sm text-default-500">{t("config.description")}</p>
         </div>
         <Button variant="primary" isDisabled={loading} isPending={saving} onPress={save}>
-          保存
+          {t("common.save")}
         </Button>
       </div>
 
@@ -153,17 +155,17 @@ export default function ConfigManagePage() {
           className="flex items-center justify-between gap-4"
         >
           <div>
-            <p className="text-base font-semibold">AppConfig</p>
+            <p className="text-base font-semibold">{t("config.appConfig")}</p>
           </div>
           <Button isDisabled={loading} size="sm" variant="tertiary" onPress={load}>
-            刷新
+            {t("common.refresh")}
           </Button>
         </Card.Header>
         <Card.Content className="space-y-4">
           {loading ? (
             <div className="flex flex-col gap-2 items-center justify-center py-10">
               <Spinner />
-              <span className="text-xs text-muted">加载中...</span>
+              <span className="text-xs text-muted">{t("common.loading")}</span>
             </div>
           ) : (
             <div className="flex flex-col gap-4">

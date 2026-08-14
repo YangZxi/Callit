@@ -16,6 +16,8 @@ import {
 
 import { Select } from "@/components/heroui";
 import api from "@/lib/api";
+import { currentLocale } from "@/i18n";
+import { useTranslation } from "react-i18next";
 
 type WorkerItem = {
   id: string;
@@ -125,7 +127,7 @@ function formatDurationAxis(value: number): string {
 }
 
 function formatNumber(value: number): string {
-  return new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat(currentLocale(), {
     notation: value >= 1000 ? "compact" : "standard",
     maximumFractionDigits: 1,
   }).format(value);
@@ -134,13 +136,13 @@ function formatNumber(value: number): string {
 function formatDateTime(raw: string): string {
   const dt = new Date(raw);
   if (Number.isNaN(dt.getTime())) return "--";
-  return dt.toLocaleString();
+  return dt.toLocaleString(currentLocale());
 }
 
 function formatClock(raw: string): string {
   const dt = new Date(raw);
   if (Number.isNaN(dt.getTime())) return "--";
-  return dt.toLocaleTimeString(undefined, {
+  return dt.toLocaleTimeString(currentLocale(), {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -150,7 +152,7 @@ function formatClock(raw: string): string {
 function formatHour(raw: string): string {
   const dt = new Date(raw);
   if (Number.isNaN(dt.getTime())) return "--";
-  return dt.toLocaleTimeString(undefined, {
+  return dt.toLocaleTimeString(currentLocale(), {
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -160,10 +162,10 @@ function formatHourRange(raw: string): string {
   const start = new Date(raw);
   if (Number.isNaN(start.getTime())) return "--";
   const end = new Date(start.getTime() + 60 * 60 * 1000);
-  const startDate = start.toLocaleDateString(undefined, { month: "2-digit", day: "2-digit" });
-  const endDate = end.toLocaleDateString(undefined, { month: "2-digit", day: "2-digit" });
-  const startTime = start.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  const endTime = end.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const startDate = start.toLocaleDateString(currentLocale(), { month: "2-digit", day: "2-digit" });
+  const endDate = end.toLocaleDateString(currentLocale(), { month: "2-digit", day: "2-digit" });
+  const startTime = start.toLocaleTimeString(currentLocale(), { hour: "2-digit", minute: "2-digit" });
+  const endTime = end.toLocaleTimeString(currentLocale(), { hour: "2-digit", minute: "2-digit" });
 
   if (startDate === endDate) {
     return `${startDate} ${startTime} - ${endTime}`;
@@ -175,12 +177,13 @@ function formatRelativeTime(raw: string): string {
   const dt = new Date(raw);
   if (Number.isNaN(dt.getTime())) return "--";
   const diffSeconds = Math.max(0, Math.floor((Date.now() - dt.getTime()) / 1000));
-  if (diffSeconds < 60) return `${diffSeconds}s ago`;
+  const formatter = new Intl.RelativeTimeFormat(currentLocale(), { numeric: "auto" });
+  if (diffSeconds < 60) return formatter.format(-diffSeconds, "second");
   const diffMinutes = Math.floor(diffSeconds / 60);
-  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  if (diffMinutes < 60) return formatter.format(-diffMinutes, "minute");
   const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  return `${Math.floor(diffHours / 24)}d ago`;
+  if (diffHours < 24) return formatter.format(-diffHours, "hour");
+  return formatter.format(-Math.floor(diffHours / 24), "day");
 }
 
 function successToneClass(value: number | null | undefined): string {
@@ -277,6 +280,7 @@ function KpiCard({ label, value, icon, toneClassName = "text-default-900", foote
 }
 
 export default function Dashboard() {
+  const { t } = useTranslation();
   const [metrics, setMetrics] = useState<DashboardMetricsResponse | null>(null);
   const [trend, setTrend] = useState<DashboardTrendPoint[]>([]);
   const [workers, setWorkers] = useState<WorkerItem[]>([]);
@@ -324,13 +328,13 @@ export default function Dashboard() {
   }, [loadDashboard]);
 
   const workerOptions = useMemo(() => [
-    { label: "所有 Worker", value: allWorkersValue, description: "" },
+    { label: t("dashboard.allWorkers"), value: allWorkersValue, description: "" },
     ...workers.map((worker) => ({
       label: worker.name,
       value: worker.id,
       description: worker.id,
     })),
-  ], [workers]);
+  ], [workers, t]);
 
   const chartData = useMemo(() => trend.map((item) => ({
     ...item,
@@ -366,13 +370,13 @@ export default function Dashboard() {
     <div className="pb-8">
       <header className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end">
         <div className="min-w-0">
-          <h1 className="text-4xl font-extrabold tracking-tight text-default-900">Dashboard</h1>
-          <p className="mt-2 text-sm font-medium text-default-500">System Worker Execution Health Overview</p>
+          <h1 className="text-4xl font-extrabold tracking-tight text-default-900">{t("dashboard.title")}</h1>
+          <p className="mt-2 text-sm font-medium text-default-500">{t("dashboard.subtitle")}</p>
         </div>
         <div className="flex max-w-full items-center gap-2 rounded-xl border border-default-200 bg-background/70 px-3 py-2 shadow-sm">
           <Icon icon="mingcute:time-duration-line" width="18" height="18" className="shrink-0 text-primary" />
           <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-default-500">
-            Last Update: {metrics ? formatClock(metrics.generated_at) : "--"}
+            {metrics ? formatClock(metrics.generated_at) : "--"}
           </span>
           <Button
             isIconOnly
@@ -398,40 +402,40 @@ export default function Dashboard() {
         ) : (
           <>
             <KpiCard
-              label="Worker Overview"
-              value={`${metrics?.workers.total ?? 0} Total`}
+              label={t("dashboard.workerOverview")}
+              value={`${metrics?.workers.total ?? 0}`}
               icon="icon-park-outline:more-app"
               toneClassName={successToneClass(null)}
-              footer={`${metrics?.workers.enabled ?? 0} Enabled`}
+              footer={`${metrics?.workers.enabled ?? 0} ${t("dashboard.enabledWorkers")}`}
             />
             <KpiCard
-              label="24h Success Rate"
+              label={t("dashboard.successRate24h")}
               value={formatPercent(metrics?.summary.success_rate_24h)}
               icon="material-symbols:trending-up-rounded"
               toneClassName={successToneClass(metrics?.summary.success_rate_24h)}
-              footer={`${formatNumber(metrics?.summary.total_calls_24h ?? 0)} calls · ${formatNumber(metrics?.summary.failed_calls_24h ?? 0)} failed`}
+              footer={t("dashboard.callsFailed", { calls: formatNumber(metrics?.summary.total_calls_24h ?? 0), failed: formatNumber(metrics?.summary.failed_calls_24h ?? 0) })}
             />
             <KpiCard
-              label="6h Success Rate"
+              label={t("dashboard.successRate6h")}
               value={formatPercent(metrics?.summary.success_rate_6h)}
               icon="material-symbols:query-stats-rounded"
               toneClassName={successToneClass(metrics?.summary.success_rate_6h)}
-              footer={`${formatNumber(metrics?.summary.total_calls_6h ?? 0)} calls · ${formatNumber(metrics?.summary.failed_calls_6h ?? 0)} failed`}
+              footer={t("dashboard.callsFailed", { calls: formatNumber(metrics?.summary.total_calls_6h ?? 0), failed: formatNumber(metrics?.summary.failed_calls_6h ?? 0) })}
             />
             <KpiCard
-              label="Avg Execution"
+              label={t("dashboard.avgExecution")}
               value={formatDuration(metrics?.summary.avg_duration_ms_24h)}
               icon="material-symbols:speed-rounded"
-              footer="24h average execution time"
+              footer={t("dashboard.average24h")}
             />
             <KpiCard
-              label="Recently Failed"
+              label={t("dashboard.recentlyFailed")}
               value={`${metrics?.summary.last_failed_workers_count ?? 0}`}
               icon="material-symbols:error-outline-rounded"
               toneClassName="text-orange-500"
               footer={
-                <div className="truncate" title={failedWorkerNames || "暂无失败 Worker"}>
-                  {failedWorkerNames || "暂无失败 Worker"}
+                <div className="truncate" title={failedWorkerNames || t("dashboard.noFailures")}>
+                  {failedWorkerNames || t("dashboard.noFailures")}
                 </div>
               }
             />
@@ -443,9 +447,9 @@ export default function Dashboard() {
         <Card.Header className="flex flex-col items-start justify-between gap-4 p-5 md:flex-row md:items-center">
           <div>
             <Card.Title className="text-xl font-bold tracking-tight text-default-900">
-              {chartTab === "call" ? "Call Success Rate Trend" : "Average Duration Trend"}
+              {chartTab === "call" ? t("dashboard.callTrend") : t("dashboard.durationTrend")}
             </Card.Title>
-            <Card.Description>Last 24 Hours · Hourly Aggregation</Card.Description>
+            <Card.Description>{t("dashboard.trendDescription")}</Card.Description>
           </div>
           <div className="flex items-center gap-2">
             <Tabs className="text-center"
@@ -454,21 +458,21 @@ export default function Dashboard() {
             >
               <Tabs.ListContainer>
                 <Tabs.List
-                  aria-label="Options"
+                  aria-label={t("dashboard.callTrend")}
                 >
                   <Tabs.Tab id="call">
-                    Call
+                    {t("dashboard.call")}
                     <Tabs.Indicator />
                   </Tabs.Tab>
                   <Tabs.Tab id="duration">
-                    Duration
+                    {t("dashboard.duration")}
                     <Tabs.Indicator />
                   </Tabs.Tab>
                 </Tabs.List>
               </Tabs.ListContainer>
             </Tabs>
             <Select
-              aria-label="选择 Worker"
+              aria-label={t("dashboard.worker")}
               className="w-full md:w-[220px]"
               options={workerOptions}
               value={selectedWorkerId}
@@ -519,9 +523,9 @@ export default function Dashboard() {
                     <RechartsTooltip
                       labelFormatter={chartTooltipLabel}
                       formatter={(value, name) => {
-                        if (name === "successRate") return [`${Number(value).toFixed(2)}%`, "Success Rate"];
-                        if (name === "total") return [formatNumber(Number(value)), "Total Calls"];
-                        if (name === "failed") return [formatNumber(Number(value)), "Failures"];
+                        if (name === "successRate") return [`${Number(value).toFixed(2)}%`, t("dashboard.successRate")];
+                        if (name === "total") return [formatNumber(Number(value)), t("dashboard.totalCalls")];
+                        if (name === "failed") return [formatNumber(Number(value)), t("dashboard.failures")];
                         return [String(value), String(name)];
                       }}
                       labelStyle={{ color: "var(--foreground)" }}
@@ -556,7 +560,7 @@ export default function Dashboard() {
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-default-500">
                   <Icon icon="material-symbols:monitoring-rounded" width="36" height="36" />
-                  <p className="text-sm font-medium">最近 24 小时暂无调用数据</p>
+                  <p className="text-sm font-medium">{t("dashboard.noCallData")}</p>
                 </div>
               )
             ) : hasDurationTrendData ? (
@@ -586,7 +590,7 @@ export default function Dashboard() {
                   <RechartsTooltip
                     labelFormatter={chartTooltipLabel}
                     formatter={(value, name) => {
-                      if (name === "avgDuration") return [formatDuration(Number(value)), "Avg Duration"];
+                      if (name === "avgDuration") return [formatDuration(Number(value)), t("dashboard.avgDuration")];
                       return [String(value), String(name)];
                     }}
                     labelStyle={{ color: "var(--foreground)" }}
@@ -615,23 +619,23 @@ export default function Dashboard() {
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-default-500">
                 <Icon icon="material-symbols:speed-rounded" width="36" height="36" />
-                <p className="text-sm font-medium">最近 24 小时暂无耗时数据</p>
+                <p className="text-sm font-medium">{t("dashboard.noDurationData")}</p>
               </div>
             )}
           </div>
           <div className="mt-4 flex flex-col justify-between gap-3 text-[10px] font-bold uppercase tracking-widest text-default-500 md:flex-row">
             {chartTab === "call" ? (
               <div className="flex flex-wrap gap-5">
-                <span className="flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-primary/20" /> Total Calls</span>
-                <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-primary" /> Success Rate</span>
-                <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-danger" /> Failure Events</span>
+                <span className="flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-primary/20" /> {t("dashboard.totalCalls")}</span>
+                <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-primary" /> {t("dashboard.successRate")}</span>
+                <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-danger" /> {t("dashboard.failureEvents")}</span>
               </div>
             ) : (
               <div className="flex flex-wrap gap-5">
-                <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-success" /> Avg Duration</span>
+                <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-success" /> {t("dashboard.avgDuration")}</span>
               </div>
             )}
-            <span>Worker: {workerOptions.find((item) => item.value === selectedWorkerId)?.label ?? "所有 Worker"}</span>
+            <span>{t("dashboard.worker", { name: workerOptions.find((item) => item.value === selectedWorkerId)?.label ?? t("dashboard.allWorkers") })}</span>
           </div>
         </Card.Content>
       </Card>
@@ -639,19 +643,19 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         <Card className="border border-default-200/70 bg-background/70 shadow-[0_8px_30px_rgba(44,52,55,0.05)] backdrop-blur-xl">
           <Card.Header className="p-3">
-            <Card.Title className="text-lg font-bold tracking-tight text-default-900">Worker Health Ranking</Card.Title>
-            <Card.Description>Last 24 Hours</Card.Description>
+            <Card.Title className="text-lg font-bold tracking-tight text-default-900">{t("dashboard.healthRanking")}</Card.Title>
+            <Card.Description>{t("dashboard.last24Hours")}</Card.Description>
           </Card.Header>
           <Card.Content className="p-3 pt-0">
             <div className="grid grid-cols-[minmax(0,1.4fr)_0.6fr_0.7fr_0.7fr] gap-3 px-2 py-2 text-[10px] font-bold uppercase tracking-widest text-default-500">
-              <span>Worker</span>
-              <span className="text-right">Calls</span>
-              <span className="text-right">Success</span>
-              <span className="text-right">Avg</span>
+              <span>{t("nav.workers")}</span>
+              <span className="text-right">{t("dashboard.calls")}</span>
+              <span className="text-right">{t("dashboard.success")}</span>
+              <span className="text-right">{t("dashboard.avg")}</span>
             </div>
             <div className="space-y-1">
               {healthRanking.length === 0 ? (
-                <div className="rounded-xl border border-default-200 px-3 py-6 text-center text-sm text-default-500">暂无排行数据</div>
+                <div className="rounded-xl border border-default-200 px-3 py-6 text-center text-sm text-default-500">{t("dashboard.noRanking")}</div>
               ) : healthRanking.map((item) => (
                 <div key={item.worker_id} className="grid grid-cols-[minmax(0,1.4fr)_0.6fr_0.7fr_0.7fr] items-center gap-3 rounded-xl px-2 py-3 transition-colors hover:bg-default-100">
                   <span className="truncate font-mono text-sm font-semibold text-primary" title={item.worker_name}>{item.worker_name}</span>
@@ -666,20 +670,20 @@ export default function Dashboard() {
 
         <Card className="border border-default-200/70 bg-background/70 shadow-[0_8px_30px_rgba(44,52,55,0.05)] backdrop-blur-xl">
           <Card.Header className="p-3">
-            <Card.Title className="text-lg font-bold tracking-tight text-default-900">Current Failures</Card.Title>
-            <Card.Description>Workers Whose Latest Call Result Is Failure</Card.Description>
+            <Card.Title className="text-lg font-bold tracking-tight text-default-900">{t("dashboard.currentFailures")}</Card.Title>
+            <Card.Description>{t("dashboard.failureDescription")}</Card.Description>
           </Card.Header>
           <Card.Content className="p-3 pt-0">
             <div className="overflow-x-auto">
               <div className="min-w-[560px]">
                 <div className="grid grid-cols-[1fr_0.45fr_0.65fr_1.2fr] gap-3 border-b border-default-200 px-2 pb-3 text-[10px] font-bold uppercase tracking-widest text-default-500">
-                  <span>Worker</span>
-                  <span className="text-center">Status</span>
-                  <span>Last Failed</span>
-                  <span>Error Summary</span>
+                  <span>{t("nav.workers")}</span>
+                  <span className="text-center">{t("dashboard.status")}</span>
+                  <span>{t("dashboard.lastFailed")}</span>
+                  <span>{t("dashboard.errorSummary")}</span>
                 </div>
                 {metrics?.last_failed_workers.length === 0 ? (
-                  <div className="px-2 py-6 text-center text-sm text-default-500">暂无当前失败 Worker</div>
+                  <div className="px-2 py-6 text-center text-sm text-default-500">{t("dashboard.noFailures")}</div>
                 ) : metrics?.last_failed_workers.map((item) => (
                   <div key={item.worker_id} className="grid grid-cols-[1fr_0.45fr_0.65fr_1.2fr] items-center gap-3 border-b border-default-100 px-2 py-4 last:border-b-0 hover:bg-default-100">
                     <span className="truncate font-mono text-sm font-semibold text-default-900" title={item.worker_name}>{item.worker_name}</span>

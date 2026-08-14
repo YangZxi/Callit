@@ -1,4 +1,5 @@
 import React from "react";
+import i18n from "@/i18n";
 import { FieldError, Input as HeroInput, Label, TextField } from "@heroui/react";
 
 type InputProps = {
@@ -50,7 +51,7 @@ export default function Input({
 			type={type}
 			validate={() => {
 				if (!isInvalid) return null;
-				return typeof errorMessage === "string" ? errorMessage : "输入不合法";
+				return typeof errorMessage === "string" ? errorMessage : i18n.t("api.invalidResponse");
 			}}
 		>
 			{label ? <Label>{label}</Label> : null}

@@ -3,6 +3,7 @@ import { Card, Label, Spinner, TextArea, toast, Input } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { Button } from "@heroui/react";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 import api from "@/lib/api";
 
@@ -42,14 +43,15 @@ function formatBytes(value: number) {
   return `${size.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
-function formatTTL(ttl: number) {
-  if (ttl === 0) return "永久";
-  if (ttl === -2) return "不存在";
+function formatTTL(ttl: number, forever: string, missing: string) {
+  if (ttl === 0) return forever;
+  if (ttl === -2) return missing;
   if (ttl < 0) return `${ttl}`;
   return `${ttl}s`;
 }
 
 export default function StorageKVPage() {
+  const { t } = useTranslation();
   const [metrics, setMetrics] = useState<KVMetrics | null>(null);
   const [keys, setKeys] = useState<KVKeyItem[]>([]);
   const [selectedKey, setSelectedKey] = useState("");
@@ -61,8 +63,8 @@ export default function StorageKVPage() {
 
   const metricItems = useMemo(() => {
     return [
-      { label: "连接数", value: metrics?.connected_clients ?? 0 },
-      { label: "内存", value: metrics?.used_memory_human || formatBytes(metrics?.used_memory ?? 0) },
+      { label: t("storage.connections"), value: metrics?.connected_clients ?? 0 },
+      { label: t("storage.memory"), value: metrics?.used_memory_human || formatBytes(metrics?.used_memory ?? 0) },
       { label: "KV Keys", value: metrics?.kv_keys ?? 0 },
     ];
   }, [metrics]);
@@ -128,13 +130,13 @@ export default function StorageKVPage() {
 
   const deleteCurrentKey = async () => {
     if (!detail) return;
-    const ok = window.confirm(`确认删除 Redis Key ${detail.key} ？`);
+    const ok = window.confirm(t("storage.deleteKeyConfirm", { key: detail.key }));
     if (!ok) return;
 
     setDeleting(true);
     try {
       await api.post("/kv/key/delete", { key: detail.key });
-      toast.success("删除成功");
+      toast.success(t("storage.deleteSuccess"));
       setSelectedKey("");
       setDetail(null);
       await reloadAll();
@@ -147,12 +149,12 @@ export default function StorageKVPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-default-900">KV Storage</h1>
-          <p className="mt-1 text-sm text-default-500">管理 Callit Worker SDK 写入的 Redis KV 数据。</p>
+          <h1 className="text-2xl font-semibold text-default-900">{t("storage.kvTitle")}</h1>
+          <p className="mt-1 text-sm text-default-500">{t("storage.kvDescription")}</p>
         </div>
         <Button isDisabled={loading || detailLoading} size="sm" variant="secondary" onPress={() => void reloadAll()}>
           <Icon icon="solar:refresh-linear" className="size-4" />
-          刷新
+          {t("common.refresh")}
         </Button>
       </div>
 
@@ -172,8 +174,8 @@ export default function StorageKVPage() {
           <Card.Header className="flex flex-col items-stretch gap-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <Card.Title className="text-base">Key List</Card.Title>
-                <Card.Description>{keys.length} 个 key</Card.Description>
+                <Card.Title className="text-base">{t("storage.keyList")}</Card.Title>
+                <Card.Description>{t("storage.keyCount", { count: keys.length })}</Card.Description>
               </div>
               <Button isDisabled={loading} isIconOnly size="sm" variant="tertiary" onPress={() => void loadKeys("")}>
                 <Icon icon="solar:refresh-linear" className="size-4" />
@@ -183,7 +185,7 @@ export default function StorageKVPage() {
               <Input
                 className="h-8"
                 name="keyword"
-                placeholder="搜索 key"
+                placeholder={t("storage.searchKey")}
                 fullWidth={true}
                 value={keyword}
                 onKeyDown={(event) => {
@@ -193,7 +195,7 @@ export default function StorageKVPage() {
               />
               <Button className="w-[80px] shrink-0" size="sm" variant="primary" onPress={submitSearch}>
                 <Icon icon="solar:magnifer-linear" className="size-4" />
-                搜索
+                {t("common.search")}
               </Button>
             </div>
           </Card.Header>
@@ -201,10 +203,10 @@ export default function StorageKVPage() {
             {loading ? (
               <div className="flex flex-col items-center justify-center gap-2 py-16">
                 <Spinner />
-                <span className="text-xs text-default-500">加载中...</span>
+                <span className="text-xs text-default-500">{t("common.loading")}</span>
               </div>
             ) : keys.length === 0 ? (
-              <div className="px-4 py-10 text-center text-sm text-default-500">暂无 KV key</div>
+              <div className="px-4 py-10 text-center text-sm text-default-500">{t("storage.noKeys")}</div>
             ) : (
               <div className="max-h-[470px] overflow-auto pb-3">
                 {groupedKeys.map((group) => (
@@ -243,7 +245,7 @@ export default function StorageKVPage() {
         <Card className="min-h-[560px] border border-default-200/70 bg-background/70 shadow-sm">
           <Card.Header className="flex !flex-row items-start justify-between gap-4">
             <div className="min-w-0">
-              <Card.Title className="text-base">{detail?.key || "请选择左侧 key"}</Card.Title>
+              <Card.Title className="text-base">{detail?.key || t("storage.selectKey")}</Card.Title>
             </div>
             <Button
               className="shrink-0"
@@ -254,31 +256,31 @@ export default function StorageKVPage() {
               onPress={deleteCurrentKey}
             >
               <Icon icon="solar:trash-bin-trash-linear" className="size-4" />
-              删除
+              {t("common.delete")}
             </Button>
           </Card.Header>
           <Card.Content>
             {detailLoading ? (
               <div className="flex flex-col items-center justify-center gap-2 py-20">
                 <Spinner />
-                <span className="text-xs text-default-500">加载详情...</span>
+                <span className="text-xs text-default-500">{t("storage.loadingDetail")}</span>
               </div>
             ) : !detail ? (
-              <div className="py-20 text-center text-sm text-default-500">未选择 key</div>
+              <div className="py-20 text-center text-sm text-default-500">{t("storage.noSelectedKey")}</div>
             ) : (
               <div className="space-y-5">
                 <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_80px]">
                   <div className="min-w-0 rounded-md border border-default-200/70 p-3">
-                    <p className="text-xs text-default-500">Namespace</p>
+                    <p className="text-xs text-default-500">{t("storage.namespace")}</p>
                     <p className="mt-1 truncate text-sm font-medium">{detail.namespace}</p>
                   </div>
                   <div className="min-w-0 rounded-md border border-default-200/70 p-3 md:w-[80px]">
                     <p className="text-xs text-default-500">TTL</p>
-                    <p className="mt-1 truncate text-sm font-medium">{formatTTL(detail.ttl)}</p>
+                    <p className="mt-1 truncate text-sm font-medium">{formatTTL(detail.ttl, t("storage.forever"), t("common.unknown"))}</p>
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="kv-value">Value</Label>
+                  <Label htmlFor="kv-value">{t("storage.value")}</Label>
                   <TextArea
                     readOnly
                     className="min-h-[360px] w-full font-mono text-sm"

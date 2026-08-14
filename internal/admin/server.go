@@ -20,6 +20,7 @@ import (
 	"callit/internal/config"
 	"callit/internal/cron"
 	"callit/internal/db"
+	localization "callit/internal/i18n"
 	"callit/internal/model"
 	"callit/internal/router"
 	workerpkg "callit/internal/worker"
@@ -70,7 +71,7 @@ func apiSuccess(c *gin.Context, data any) {
 }
 
 func apiError(c *gin.Context, httpStatus int, msg string) {
-	writeAPIResponse(c, httpStatus, httpStatus, msg, nil)
+	writeAPIResponse(c, httpStatus, httpStatus, localization.LocalizeLegacyMessage(c.Request, msg), nil)
 }
 
 // NewEngine 创建 Admin Gin 引擎。

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@heroui/react";
 import { Icon } from "@iconify/react";
+import { useTranslation } from "react-i18next";
 
 type WorkerFileTreeProps = {
   entries: string[];
@@ -107,6 +108,7 @@ export default function WorkerFileTree({
   onRequestCreateFile,
   onRequestDelete,
 }: WorkerFileTreeProps) {
+  const { t } = useTranslation();
   const tree = useMemo(() => buildTree(entries, mainFilename), [entries, mainFilename]);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -210,14 +212,13 @@ export default function WorkerFileTree({
           <div
             ref={menuRef}
             role="menu"
-            aria-label={`${node.name} 操作菜单`}
+            aria-label={t("workers.fileMenu", { name: node.name })}
             className="fixed z-50 w-36 rounded-lg border border-default-200 bg-background p-1 shadow-lg"
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
             {node.isDirectory ? (
               <>
                 <Button
-                  role="menuitem"
                   size="sm"
                   variant="ghost"
                   className="w-full justify-start"
@@ -228,10 +229,9 @@ export default function WorkerFileTree({
                   }}
                 >
                   <Icon aria-hidden="true" className="size-4" icon="material-symbols:upload-file-outline-rounded" />
-                  上传文件
+                  {t("workers.uploadFile")}
                 </Button>
                 <Button
-                  role="menuitem"
                   size="sm"
                   variant="ghost"
                   className="w-full justify-start"
@@ -242,13 +242,12 @@ export default function WorkerFileTree({
                   }}
                 >
                   <Icon aria-hidden="true" className="size-4" icon="material-symbols:note-add-outline-rounded" />
-                  新建文件
+                  {t("workers.createFile")}
                 </Button>
                 <div aria-hidden="true" className="my-1 border-t border-default-200" />
               </>
             ) : null}
             <Button
-              role="menuitem"
               size="sm"
               variant="ghost"
               className="w-full justify-start text-danger"
@@ -259,7 +258,7 @@ export default function WorkerFileTree({
               }}
             >
               <Icon aria-hidden="true" className="size-4" icon="material-symbols:delete-outline-rounded" />
-              删除
+              {t("common.delete")}
             </Button>
           </div>
         ) : null}
@@ -268,7 +267,7 @@ export default function WorkerFileTree({
   });
 
   return (
-    <div role="tree" aria-label="Worker 文件树" className="min-w-full p-1">
+    <div role="tree" aria-label={t("workers.title")} className="min-w-full p-1">
       {renderNodes(tree, 0)}
     </div>
   );

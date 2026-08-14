@@ -6,6 +6,9 @@ import {
 } from "@heroui/react";
 import { Button } from "@heroui/react";
 import { Input } from "@/components/heroui";
+import { currentLocale } from "@/i18n";
+import i18n from "@/i18n";
+import { useTranslation } from "react-i18next";
 
 import api, { BASE_API } from "@/lib/api";
 
@@ -32,17 +35,18 @@ async function streamDependencyManage(
 		credentials: "include",
 		headers: {
 			"Content-Type": "application/json",
+			"Accept-Language": currentLocale(),
 		},
 		body: JSON.stringify(payload),
 	});
 
 	if (!res.ok) {
 		const json = await res.json().catch(() => null);
-		const msg = json?.msg || json?.error || "依赖管理请求失败";
+		const msg = json?.msg || json?.error || i18n.t("dependencies.manageFailed");
 		throw new Error(msg);
 	}
 	if (!res.body) {
-		throw new Error("SSE 连接失败");
+		throw new Error(i18n.t("dependencies.sseFailed"));
 	}
 
 	const reader = res.body.getReader();
@@ -106,15 +110,16 @@ async function streamDependencyRebuild(
 	const res = await fetch(`${BASE_API}/dependencies/rebuild?runtime=${runtime}`, {
 		method: "POST",
 		credentials: "include",
+		headers: { "Accept-Language": currentLocale() },
 	});
 
 	if (!res.ok) {
 		const json = await res.json().catch(() => null);
-		const msg = json?.msg || json?.error || "环境重建请求失败";
+		const msg = json?.msg || json?.error || i18n.t("dependencies.rebuildFailed");
 		throw new Error(msg);
 	}
 	if (!res.body) {
-		throw new Error("SSE 连接失败");
+		throw new Error(i18n.t("dependencies.sseFailed"));
 	}
 
 	const reader = res.body.getReader();
@@ -172,6 +177,7 @@ async function streamDependencyRebuild(
 }
 
 export default function DependenciesPage() {
+	const { t } = useTranslation();
 	const [runtime, setRuntime] = useState<RuntimeType>("node");
 	const [dependencies, setDependencies] = useState<DependencyInfo[]>([]);
 	const [loading, setLoading] = useState(false);
@@ -185,8 +191,8 @@ export default function DependenciesPage() {
 	const loadSeqRef = useRef(0);
 
 	const title = useMemo(() => {
-		return runtime === "node" ? "Node 依赖" : "Python 依赖";
-	}, [runtime]);
+		return runtime === "node" ? t("dependencies.node") : t("dependencies.python");
+	}, [runtime, t]);
 
 	const loadDependencies = useCallback(async (target: RuntimeType) => {
 		const seq = ++loadSeqRef.current;
@@ -224,7 +230,7 @@ export default function DependenciesPage() {
 
 	const openRebuildModal = () => {
 		if (runtime === "node") {
-			toast.warning("node 环境暂不支持");
+			toast.warning(t("dependencies.nodeUnsupported"));
 			return;
 		}
 		setModalMode("rebuild");
@@ -241,7 +247,7 @@ export default function DependenciesPage() {
 		if (running) return;
 		const clean = packageName.trim();
 		if (!clean) {
-			toast.warning("依赖名不能为空");
+			toast.warning(t("dependencies.packageRequired"));
 			return;
 		}
 
@@ -260,7 +266,7 @@ export default function DependenciesPage() {
 						return;
 					}
 					if (event.event === "error") {
-						const msg = event.data?.message || "执行失败";
+						const msg = event.data?.message || t("dependencies.executionFailed");
 						appendLog(`[error] ${msg}`);
 						return;
 					}
@@ -271,13 +277,13 @@ export default function DependenciesPage() {
 			);
 
 			if (doneOK) {
-				toast.success(action === "install" ? "依赖安装完成" : "依赖移除完成");
+				toast.success(action === "install" ? t("dependencies.installComplete") : t("dependencies.removeComplete"));
 				await loadDependencies(runtime);
 			} else {
-				toast.danger("执行失败，请查看日志");
+				toast.danger(t("dependencies.executionFailedLogs"));
 			}
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : "依赖管理失败";
+			const msg = err instanceof Error ? err.message : t("dependencies.manageFailed");
 			appendLog(`[error] ${msg}`);
 			toast.danger(msg);
 		} finally {
@@ -301,7 +307,7 @@ export default function DependenciesPage() {
 					return;
 				}
 				if (event.event === "error") {
-					const msg = event.data?.message || "环境重建失败";
+					const msg = event.data?.message || t("dependencies.rebuildFailed");
 					appendLog(`[error] ${msg}`);
 					return;
 				}
@@ -311,13 +317,13 @@ export default function DependenciesPage() {
 			});
 
 			if (doneOK) {
-				toast.success("环境重建完成");
+				toast.success(t("dependencies.rebuildComplete"));
 				await loadDependencies(runtime);
 			} else {
-				toast.danger("环境重建失败，请查看日志");
+				toast.danger(t("dependencies.rebuildFailedLogs"));
 			}
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : "环境重建失败";
+			const msg = err instanceof Error ? err.message : t("dependencies.rebuildFailed");
 			appendLog(`[error] ${msg}`);
 			toast.danger(msg);
 		} finally {
@@ -326,19 +332,19 @@ export default function DependenciesPage() {
 	};
 
 	const modalHeading = modalMode === "rebuild"
-		? "重建环境"
-		: (action === "install" ? "安装依赖" : "移除依赖");
+		? t("dependencies.rebuild")
+		: (action === "install" ? t("dependencies.install") : t("dependencies.remove"));
 
 	return (
 		<section className="pb-4 md:pb-2">
 			<div className="flex items-center justify-between gap-3">
 				<div className="flex flex-col gap-1">
-					<h1 className="text-3xl font-semibold text-default-900 dark:text-default-700">Dependencies</h1>
+					<h1 className="text-3xl font-semibold text-default-900 dark:text-default-700">{t("dependencies.title")}</h1>
 					<p className="text-sm text-default-500">{title}</p>
 				</div>
 				<div className="flex items-center gap-2">
-					<Button variant="secondary" onPress={openRebuildModal}>重建环境</Button>
-					<Button variant="primary" onPress={openInstallModal}>安装依赖</Button>
+					<Button variant="secondary" onPress={openRebuildModal}>{t("dependencies.rebuild")}</Button>
+					<Button variant="primary" onPress={openInstallModal}>{t("dependencies.install")}</Button>
 				</div>
 			</div>
 
@@ -369,10 +375,10 @@ export default function DependenciesPage() {
 				</Tabs>
 
 				<div className="mt-4">
-					{loading ? <p className="text-sm text-default-500">正在加载依赖列表...</p> : null}
+					{loading ? <p className="text-sm text-default-500">{t("dependencies.loading")}</p> : null}
 					{!loading && dependencies.length === 0 ? (
 						<div className="rounded-xl border border-default-200 p-4 text-sm text-default-500">
-							当前环境暂无可管理依赖。
+							{t("dependencies.empty")}
 						</div>
 					) : null}
 					{!loading && dependencies.length > 0 ? (
@@ -384,7 +390,7 @@ export default function DependenciesPage() {
 										<p className="text-xs text-default-500">{item.version || "-"}</p>
 									</div>
 									<Button size="sm" variant="danger-soft" onPress={() => openRemoveModal(item.name)}>
-										移除
+										{t("dependencies.remove")}
 									</Button>
 								</div>
 							))}
@@ -413,14 +419,14 @@ export default function DependenciesPage() {
 											className="flex-1"
 											isDisabled={running || action === "remove"}
 											isRequired
-											label="依赖名"
+											label={t("dependencies.packageName")}
 											name="package-name"
 											placeholder={runtime === "node" ? "例如 lodash" : "例如 requests"}
 											value={packageName}
 											onValueChange={setPackageName}
 										/>
 										<Button variant={action === "install" ? "primary" : "danger"} isPending={running} onPress={doManage}>
-											{action === "install" ? "安装" : "移除"}
+											{action === "install" ? t("dependencies.install") : t("dependencies.remove")}
 										</Button>
 									</div>
 								) : (
@@ -429,13 +435,13 @@ export default function DependenciesPage() {
 									</div>
 								)}
 								<div className="mt-2 h-64 overflow-auto rounded-lg border border-default-200 bg-default-100 p-3 font-mono text-xs whitespace-pre-wrap break-words">
-									{logs.length > 0 ? logs.join("\n") : "等待执行..."}
+									{logs.length > 0 ? logs.join("\n") : t("http.waiting")}
 								</div>
 							</Modal.Body>
 							<Modal.Footer>
 								{modalMode === "rebuild" ? (
 									<Button variant="primary" isPending={running} onPress={doRebuild}>
-										开始重建
+										{t("dependencies.rebuild")}
 									</Button>
 								) : null}
 								<Button
@@ -445,7 +451,7 @@ export default function DependenciesPage() {
 										setModalOpen(false);
 									}}
 								>
-									关闭
+										{t("common.close")}
 								</Button>
 							</Modal.Footer>
 						</Modal.Dialog>

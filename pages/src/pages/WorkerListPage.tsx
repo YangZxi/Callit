@@ -9,6 +9,7 @@ import XModal from "@/components/modal";
 import WorkerCronList from "@/components/worker-cron-list";
 import { Input, Select, Switch } from "@/components/heroui";
 import { copyText } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 
 type WorkerItem = {
   id: string;
@@ -66,6 +67,7 @@ function isValidWorkerRoute(route: string): boolean {
 }
 
 export default function WorkerListPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [modalMode, setModalMode] = useState<ModalMode>("create");
@@ -130,27 +132,27 @@ export default function WorkerListPage() {
     const timeoutSeconds = timeoutMS / 1000;
 
     if (!form.name.trim()) {
-      toast.warning("name 不能为空");
+      toast.warning(t("workers.nameRequired"));
       return;
     }
     if ([...form.description].length > 200) {
-      toast.warning("description 不能超过 200 字符");
+      toast.warning(t("workers.descriptionTooLong"));
       return;
     }
     if (!form.route.trim().startsWith("/")) {
-      toast.warning("route 必须以 / 开头");
+      toast.warning(t("workers.routeRequired"));
       return;
     }
     if (form.route.trim() === "/*") {
-      toast.warning("route 不能使用泛根路径 /*");
+      toast.warning(t("workers.routeRoot"));
       return;
     }
     if (!isValidWorkerRoute(form.route.trim())) {
-      toast.warning("route 使用通配符时只支持结尾 /* 形式");
+      toast.warning(t("workers.routeWildcard"));
       return;
     }
     if (!Number.isFinite(timeoutMS) || timeoutMS <= 0 || timeoutSeconds > 300) {
-      toast.warning("超时必须大于 0 秒且不能超过 300 秒");
+      toast.warning(t("workers.timeoutInvalid"));
       return;
     }
     setCreating(true);
@@ -229,7 +231,7 @@ export default function WorkerListPage() {
 
   const removeWorker = async (item: WorkerItem) => {
     if (actioningID) return;
-    const ok = window.confirm(`确认删除 Worker ${item.name} ？`);
+    const ok = window.confirm(t("workers.deleteConfirm", { name: item.name }));
     if (!ok) return;
     setActioningID(item.id);
     try {
@@ -266,9 +268,9 @@ export default function WorkerListPage() {
       <header className="flex flex-col md:flex-row md:items-end justify-between mb-6 gap-6">
         <div>
           <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-4xl font-extrabold font-headline tracking-tight text-[#2c3437] dark:text-white">Worker 列表</h1>
+            <h1 className="text-4xl font-extrabold font-headline tracking-tight text-[#2c3437] dark:text-white">{t("workers.title")}</h1>
           </div>
-          <p className="text-[#596064] dark:text-gray-400 font-medium">共 {workers.length} 个 Worker</p>
+          <p className="text-[#596064] dark:text-gray-400 font-medium">{t("workers.count", { count: workers.length })}</p>
         </div>
         <div className="flex items-center gap-4">
           <SearchField name="search"
@@ -292,16 +294,16 @@ export default function WorkerListPage() {
             variant="primary"
             onPress={openCreateModal}
           >
-            新增 Worker
+            {t("workers.add")}
           </Button>
         </div>
       </header>
 
       <div className="space-y-2 mb-6">
-        {listLoading && <div className="text-sm text-default-500">正在加载 Worker 列表...</div>}
+        {listLoading && <div className="text-sm text-default-500">{t("common.loading")}</div>}
         {empty && (
           <div className="bg-white/50 backdrop-blur-md rounded-2xl p-12 text-center border border-white/40">
-            <p className="text-[#596064]">暂无 Worker，点击右上角新增。</p>
+            <p className="text-[#596064]">{t("workers.noWorkersHint")}</p>
           </div>
         )}
         {!listLoading && workers.map((item) => (
@@ -321,7 +323,7 @@ export default function WorkerListPage() {
                     color={item.enabled ? "success" : "default"}
                     size="sm" variant="soft"
                   >
-                    {item.enabled ? "已启用" : "已停用"}
+                    {item.enabled ? t("common.enabled") : t("common.disabled")}
                   </Chip>
                 </div>
                 <p className="text-[11px] font-mono text-[#acb3b7] mt-1">ID: {item.id}</p>
@@ -353,7 +355,7 @@ export default function WorkerListPage() {
                         fullUrl = fullUrl.slice(0, -1);
                       }
                       void copyText(fullUrl);
-                      toast.success("地址已复制");
+                      toast.success(t("workers.copied"));
                     }}
                   >
                     <Icon icon="ic:baseline-link" width="22" height="22" className="text-[#0055d7]" />
@@ -378,7 +380,7 @@ export default function WorkerListPage() {
                 className="text-xs"
                 onPress={() => openEditModal(item)}
               >
-                编辑
+                {t("workers.edit")}
               </Button>
               {item.enabled ? (
                 <Button
@@ -388,7 +390,7 @@ export default function WorkerListPage() {
                   className="text-xs text-warning"
                   onPress={() => setEnabled(item, false)}
                 >
-                  停用
+                  {t("workers.disable")}
                 </Button>
               ) : (
                 <Button
@@ -398,7 +400,7 @@ export default function WorkerListPage() {
                   className="text-xs"
                   onPress={() => setEnabled(item, true)}
                 >
-                  启用
+                  {t("workers.enable")}
                 </Button>
               )}
               <Button
@@ -408,7 +410,7 @@ export default function WorkerListPage() {
                 className="text-xs"
                 onPress={() => removeWorker(item)}
               >
-                删除
+                {t("common.delete")}
               </Button>
             </div>
           </div>
@@ -416,12 +418,12 @@ export default function WorkerListPage() {
       </div>
 
       <XModal
-        header={modalMode === "create" ? "创建 Worker" : "编辑 Worker"}
+        header={modalMode === "create" ? t("workers.create") : t("workers.edit")}
         isDismissable={!creating}
         isKeyboardDismissDisabled={creating}
         isOpen={isOpen}
         scrollBehavior="inside"
-        submitText={creating ? (modalMode === "create" ? "创建中..." : "保存中...") : (modalMode === "create" ? "创建" : "保存")}
+        submitText={creating ? t("common.loading") : (modalMode === "create" ? t("workers.create") : t("common.save"))}
         classNames={{
           body: "px-[4px]"
         }}
@@ -437,14 +439,14 @@ export default function WorkerListPage() {
               <Input
                 isRequired
                 className="w-full"
-                label="Worker 名"
+                label={t("workers.name")}
                 name="worker-name"
                 value={form.name}
                 onValueChange={(value) => setForm((prev) => ({ ...prev, name: value }))}
               />
             </div>
             <div className="textfield w-[60px] shrink-0">
-              <label className="label mb-2">启用</label>
+              <label className="label mb-2">{t("workers.enable")}</label>
               <Switch
                 value={form.enabled}
                 onValueChange={(value) => setForm((prev) => ({ ...prev, enabled: value }))}
@@ -453,7 +455,7 @@ export default function WorkerListPage() {
           </div>
           <Input
             description={`${[...form.description].length}/200`}
-            label="描述"
+            label={t("workers.description")}
             maxLength={200}
             name="worker-description"
             value={form.description}
@@ -461,7 +463,7 @@ export default function WorkerListPage() {
           />
           <Input
             isRequired
-            label="路由"
+            label={t("workers.route")}
             name="worker-route"
             value={form.route}
             onValueChange={(value) => setForm((prev) => ({ ...prev, route: value }))}
@@ -484,7 +486,7 @@ export default function WorkerListPage() {
             />
             <Input
               isRequired
-              label="超时(秒)"
+              label={t("workers.timeout")}
               name="worker-timeout"
               type="number"
               step="0.1"
@@ -493,7 +495,7 @@ export default function WorkerListPage() {
             />
           </div>
           <div className="flex flex-col gap-1 mb-1">
-            <Label htmlFor="worker-env">环境变量(多个以换行分隔)</Label>
+            <Label htmlFor="worker-env">{t("workers.environment")}</Label>
             <TextArea
               id="worker-env"
               className="w-full"
@@ -503,12 +505,12 @@ export default function WorkerListPage() {
               onChange={(event) => setForm((prev) => ({ ...prev, env: event.target.value }))}
             />
           </div>
-          <button className="hidden" type="submit">创建</button>
+          <button className="hidden" type="submit">{t("workers.create")}</button>
         </form>
       </XModal>
 
       <XModal
-        header={cronWorker ? `${cronWorker.name} 的 Cron` : "Cron"}
+        header={cronWorker ? `${cronWorker.name} ${t("workers.cron")}` : "Cron"}
         isDismissable={false}
         isKeyboardDismissDisabled
         isOpen={cronModalOpen}

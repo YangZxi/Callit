@@ -5,8 +5,10 @@ import { BASE_PREFIX } from "@/main";
 import { Input } from "@/components/heroui";
 
 import { checkAdminAuthenticated, loginWithAdminToken } from "@/lib/admin-auth";
+import { useTranslation } from "react-i18next";
 
 export default function HomePage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
@@ -43,7 +45,7 @@ export default function HomePage() {
       await loginWithAdminToken(token);
       navigate(`${BASE_PREFIX}/workers`, { replace: true });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "登录失败";
+      const message = err instanceof Error ? err.message : t("auth.failed");
       setError(message);
     } finally {
       setSubmitting(false);
@@ -54,7 +56,7 @@ export default function HomePage() {
     return (
       <section className="flex justify-center items-center h-full mt-10">
         <div className="w-full max-w-md rounded-2xl border border-default-200 px-6 py-8 shadow-sm">
-          <p className="text-sm text-default-500">正在检查登录状态...</p>
+          <p className="text-sm text-default-500">{t("auth.checking")}</p>
         </div>
       </section>
     );
@@ -63,8 +65,8 @@ export default function HomePage() {
   return (
     <section className="flex justify-center items-center h-full mt-10">
       <div className="w-full max-w-md rounded-2xl border border-default-200 px-6 py-8 shadow-sm bg-background/70">
-        <h1 className="text-2xl font-semibold text-default-900">Callit 管理后台登录</h1>
-        <p className="mt-2 text-sm text-default-500">请输入启动服务时配置的 ADMIN_TOKEN</p>
+        <h1 className="text-2xl font-semibold text-default-900">{t("auth.title")}</h1>
+        <p className="mt-2 text-sm text-default-500">{t("auth.hint")}</p>
 
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <Input
@@ -72,7 +74,7 @@ export default function HomePage() {
             isRequired
             label="Token"
             name="token"
-            placeholder="请输入 ADMIN_TOKEN"
+            placeholder={t("auth.tokenPlaceholder")}
             type="password"
             value={token}
             onValueChange={setToken}
@@ -85,7 +87,7 @@ export default function HomePage() {
             isPending={submitting}
             type="submit"
           >
-            登录
+            {t("auth.login")}
           </Button>
         </form>
       </div>

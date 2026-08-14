@@ -1,5 +1,6 @@
 import { Button } from "@heroui/react";
 import { Modal } from "@heroui/react";
+import { useTranslation } from "react-i18next";
 
 type ModalSize = React.ComponentProps<typeof Modal.Container>["size"];
 type ModalPlacement = React.ComponentProps<typeof Modal.Container>["placement"];
@@ -41,12 +42,13 @@ export default function XModal({
   classNames,
   ...props
 }: XModalProps) {
+  const { t } = useTranslation();
   const close = () => onOpenChange(false);
 
   if (onSubmit && footer == null) {
     footer = <>
-      <Button variant="secondary" onPress={close}>关闭</Button>
-      <Button variant="primary" onPress={onSubmit}>{submitText || "提交"}</Button>
+      <Button variant="secondary" onPress={close}>{t("common.close")}</Button>
+      <Button variant="primary" onPress={onSubmit}>{submitText || t("common.submit")}</Button>
     </>;
   }
 
@@ -69,7 +71,7 @@ export default function XModal({
               {footer ? <>
                 {footer}
               </> : <>
-                <Button variant="primary" onPress={close}>知道了</Button>
+                <Button variant="primary" onPress={close}>{t("modal.acknowledge")}</Button>
               </>}
             </Modal.Footer>
           </Modal.Dialog>

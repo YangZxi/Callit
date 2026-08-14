@@ -1,29 +1,32 @@
 import { Link as RouterLink, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { Button, Dropdown, Link as HeroLink } from "@heroui/react";
+import { Dropdown, Link as HeroLink } from "@heroui/react";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 // import Login from "./login";
 import { GithubIcon } from "@/components/icons";
 import { ThemeSwitch } from "@/components/theme-switch";
+import { LanguageSwitch } from "@/components/language-switch";
 import { siteConfig } from "@/config/site";
 
 function AppNavbar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   return (
     <nav
       className={clsx(
         "bg-transparent absolute",
         "md:min-w-120 top-[10px] md:top-[20px]",
-        "z-50 w-auto mx-auto inset-x-0",
+        "z-50 mx-auto inset-x-0 w-fit max-w-[calc(100%-1rem)]",
         "bg-background/70 backdrop-blur-xl backdrop-saturate-150",
         "rounded-full border border-default-200/50 shadow-lg",
-        "max-w-fit px-4",
+        "px-3 sm:px-4",
       )}
     >
-      <div className="px-0 gap-6 h-12 flex items-center justify-between">
-        <div className="basis-1/5 sm:basis-full flex items-center justify-start gap-3 max-w-fit mr-2">
+      <div className="h-12 flex items-center gap-3 sm:gap-5">
+        <div className="shrink-0 flex items-center justify-start">
           <RouterLink className="flex justify-start items-center gap-1 no-underline" to={`${window.__BASE_PREFIX__}/`}>
             <img
               src={`${window.__BASE_PREFIX__}/static/logo.png`}
@@ -33,7 +36,7 @@ function AppNavbar() {
             <p className="font-bold text-inherit hidden sm:block">{siteConfig.name}</p>
           </RouterLink>
         </div>
-        <ul className="flex gap-6 justify-start ml-2">
+        <ul className="flex min-w-0 items-center gap-3 sm:gap-5">
           {siteConfig.navItems.map((item) => {
             const children = "children" in item ? item.children : undefined;
             const active = children
@@ -41,32 +44,32 @@ function AppNavbar() {
               : location.pathname === item.href;
             if (children) {
               return (
-                <li key={item.href}>
+                <li key={item.href} className="shrink-0">
                   <Dropdown>
                     <Dropdown.Trigger>
                       <div
                         className={clsx(
                           `${item.mobile === true ? "" : "hidden sm:inline-block"}`,
-                          "no-underline opacity-80 hover:opacity-100 transition-opacity",
+                          "whitespace-nowrap no-underline opacity-80 hover:opacity-100 transition-opacity",
                           active ? "text-primary font-medium opacity-100" : "text-default-700",
                         )}
                       >
-                        {item.label}
+                        {t(item.labelKey)}
                       </div>
                     </Dropdown.Trigger>
                     <Dropdown.Popover 
                       placement="bottom" 
                       className="min-w-[90px] bg-transparent bg-background/70 backdrop-blur-xl backdrop-saturate-150"
                     >
-                      <Dropdown.Menu aria-label={`${item.label} 导航`}>
+                      <Dropdown.Menu aria-label={t(item.labelKey)}>
                         {children.map((child) => (
                           <Dropdown.Item
                             key={child.href}
                             id={child.href}
-                            textValue={child.label}
+                            textValue={t(child.labelKey)}
                             onPress={() => navigate(child.href)}
                           >
-                            {child.label}
+                            {t(child.labelKey)}
                           </Dropdown.Item>
                         ))}
                       </Dropdown.Menu>
@@ -76,23 +79,23 @@ function AppNavbar() {
               );
             }
             return (
-              <li key={item.href}>
+              <li key={item.href} className="shrink-0">
                 <NavLink
                   className={clsx(
                     `${item.mobile === true ? "" : "hidden sm:inline-block"}`,
-                    "no-underline opacity-80 hover:opacity-100 transition-opacity",
+                    "whitespace-nowrap no-underline opacity-80 hover:opacity-100 transition-opacity",
                     active ? "text-primary font-medium opacity-100" : "text-default-700",
                   )}
                   to={item.href}
                 >
-                  {item.label}
+                  {t(item.labelKey)}
                 </NavLink>
               </li>
             );
           })}
         </ul>
 
-        <div className="sm:flex basis-1/5 sm:basis-full items-center justify-end">
+        <div className="ml-auto flex shrink-0 items-center justify-end">
           <div className="h-6 w-[1px] bg-default-300 mx-1 hidden sm:block" />
           <div className="flex gap-2 items-center">
             <HeroLink
@@ -104,6 +107,7 @@ function AppNavbar() {
               <GithubIcon />
             </HeroLink>
             <ThemeSwitch />
+            <LanguageSwitch />
           </div>
 
           {/* <div>

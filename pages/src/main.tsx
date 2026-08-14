@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import { ToastProvider } from "@heroui/react";
 
 import App from "./App.tsx";
+import "./i18n";
 import "@/styles/globals.css";
 
 

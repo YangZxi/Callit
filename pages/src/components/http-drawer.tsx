@@ -2,6 +2,7 @@ import { Dispatch, SetStateAction, useEffect, useMemo, useState } from "react";
 import { toast, Drawer, Tabs, TextArea, Label } from "@heroui/react";
 import { Button } from "@heroui/react";
 import { Input, Select } from "@/components/heroui";
+import { useTranslation } from "react-i18next";
 
 type TabKey = "headers" | "params" | "body";
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
@@ -110,6 +111,7 @@ function KeyValueRowsEditor({ rows, setRows }: KeyValueRowsEditorProps) {
 }
 
 export default function HttpDrawer({ defaultUrl, defaultMethod = "GET" }: HttpDrawerProps) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabKey>("params");
   const [method, setMethod] = useState<HttpMethod>(defaultMethod);
   const [url, setUrl] = useState(defaultUrl);
@@ -117,7 +119,7 @@ export default function HttpDrawer({ defaultUrl, defaultMethod = "GET" }: HttpDr
   const [paramsRows, setParamsRows] = useState<KeyValueRow[]>([createRow()]);
   const [bodyText, setBodyText] = useState("");
   const [loading, setLoading] = useState(false);
-  const [responseText, setResponseText] = useState("等待请求...");
+  const [responseText, setResponseText] = useState(() => t("http.waiting"));
 
   useEffect(() => {
     setUrl(defaultUrl);
@@ -131,7 +133,7 @@ export default function HttpDrawer({ defaultUrl, defaultMethod = "GET" }: HttpDr
 
   const sendRequest = async () => {
     if (!url.trim()) {
-      toast.danger("URL 不能为空");
+      toast.danger(t("http.requestUrlRequired"));
       return;
     }
 
@@ -172,7 +174,7 @@ export default function HttpDrawer({ defaultUrl, defaultMethod = "GET" }: HttpDr
       }, null, 2));
     } catch (err) {
       setResponseText(JSON.stringify({
-        error: err instanceof Error ? err.message : "请求失败",
+        error: err instanceof Error ? err.message : t("api.requestFailed"),
       }, null, 2));
     }
     finally {
@@ -182,20 +184,20 @@ export default function HttpDrawer({ defaultUrl, defaultMethod = "GET" }: HttpDr
 
   return (
     <Drawer>
-      <Button size="sm" variant="tertiary">Testing</Button>
+      <Button size="sm" variant="tertiary">{t("http.testing")}</Button>
       <Drawer.Backdrop>
         <Drawer.Content placement="right">
           <Drawer.Dialog className="w-[min(96vw,36rem)]">
             <Drawer.Handle />
             <Drawer.CloseTrigger />
             <Drawer.Header>
-              <Drawer.Heading>HTTP 测试</Drawer.Heading>
+              <Drawer.Heading>{t("http.testing")}</Drawer.Heading>
             </Drawer.Header>
             <Drawer.Body className="flex flex-col gap-4">
               <div className="grid grid-cols-[110px_1fr_auto] items-end gap-2">
                 <Select
                   className="w-full"
-                  label="Method"
+                  label={t("http.method")}
                   options={methodList.map((m) => ({ label: m, value: m }))}
                   value={method}
                   onValueChange={(value) => setMethod(value as HttpMethod)}
@@ -204,7 +206,7 @@ export default function HttpDrawer({ defaultUrl, defaultMethod = "GET" }: HttpDr
                 <Input
                   label="URL"
                   name="http-url"
-                  placeholder="输入请求 URL"
+                  placeholder={t("http.urlPlaceholder")}
                   value={url}
                   onValueChange={setUrl}
                 />
@@ -272,7 +274,7 @@ export default function HttpDrawer({ defaultUrl, defaultMethod = "GET" }: HttpDr
             </Drawer.Body>
             <Drawer.Footer className="flex justify-end">
               <Button slot="close" size="sm" variant="secondary">
-                关闭
+                {t("common.close")}
               </Button>
             </Drawer.Footer>
           </Drawer.Dialog>

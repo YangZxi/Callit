@@ -1,6 +1,8 @@
 import { Link } from "@heroui/react";
+import { useTranslation } from "react-i18next";
 
 function Footer() {
+  const { t } = useTranslation();
   return (
     <footer
       className="
@@ -18,14 +20,14 @@ function Footer() {
         target="_blank"
         title="heroui.com homepage"
       >
-        <span className="text-default-600">Powered by</span>
+        <span className="text-default-600">{t("footer.poweredBy")}</span>
         <span className="text-accent font-bold ml-1">
           Callit
         </span>
       </a>
       <p className="hidden md:block text-sm">
         <span className="hidden md:inline ml-1">
-          如果你喜欢本项目，欢迎自建部署或给个⭐
+          {t("footer.support")}<span aria-hidden="true">⭐</span>
         </span>
       </p>
     </footer>

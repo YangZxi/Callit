@@ -14,8 +14,10 @@ import StorageKVPage from "./pages/StorageKVPage";
 import StorageDBPage from "./pages/StorageDBPage";
 import { checkAdminAuthenticated } from "./lib/admin-auth";
 import { BASE_PREFIX } from "./main";
+import { useTranslation } from "react-i18next";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<"loading" | "authenticated" | "guest">("loading");
 
   useEffect(() => {
@@ -35,7 +37,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }, []);
 
   if (status === "loading") {
-    return <section className="py-10 text-sm text-default-500">正在校验登录状态...</section>;
+    return <section className="py-10 text-sm text-default-500">{t("auth.checking")}</section>;
   }
   if (status === "guest") {
     return <Navigate replace to={BASE_PREFIX} />;

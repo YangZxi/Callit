@@ -4,6 +4,7 @@ import { Button } from "@heroui/react";
 
 import { useTheme } from "@/lib/theme.ts";
 import { SunFilledIcon, MoonFilledIcon } from "@/components/icons.tsx";
+import { useTranslation } from "react-i18next";
 
 export interface ThemeSwitchProps {
   className?: string;
@@ -14,6 +15,7 @@ export const ThemeSwitch: FC<ThemeSwitchProps> = ({
 }) => {
   const [isMounted, setIsMounted] = useState(false);
   const { theme, toggleTheme } = useTheme();
+  const { t } = useTranslation();
   const isSelected = theme === "dark";
 
   useEffect(() => {
@@ -30,7 +32,7 @@ export const ThemeSwitch: FC<ThemeSwitchProps> = ({
       variant="tertiary"
       size="sm"
       onPress={toggleTheme}
-      aria-label={isSelected ? "切换到浅色模式" : "切换到深色模式"}
+      aria-label={isSelected ? t("theme.switchToLight") : t("theme.switchToDark")}
       aria-pressed={isSelected}
       className={clsx(
         "shrink-0",

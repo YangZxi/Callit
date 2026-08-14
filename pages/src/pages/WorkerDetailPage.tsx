@@ -12,6 +12,7 @@ import WorkerLogList, { WorkerLogItem } from "@/components/worker-log-list";
 import WorkerFileTree from "@/components/worker-file-tree";
 import { Icon } from "@iconify/react";
 import { useTheme } from "@/lib/theme";
+import { useTranslation } from "react-i18next";
 
 type WorkerItem = {
   id: string;
@@ -72,6 +73,7 @@ function normalizeWorkerPathInput(raw: string): string {
 }
 
 export default function WorkerDetailPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { id = "" } = useParams();
   const { isDark } = useTheme();
@@ -198,7 +200,7 @@ export default function WorkerDetailPage() {
 
   useEffect(() => {
     if (!id) {
-      toast.danger("缺少 WorkerId");
+      toast.danger(t("workers.missingId"));
       navigate("/workers", { replace: true });
       return;
     }
@@ -233,11 +235,11 @@ export default function WorkerDetailPage() {
   const saveCurrentFile = useCallback(async () => {
     if (!selectedFile || saving) return;
     if (isDiffMode) {
-      toast.warning("当前为 Diff 模式，请使用“应用并清理 diff”");
+      toast.warning(t("workers.diffMergeWarning"));
       return;
     }
     if (fileMediaType === "image") {
-      toast.warning("图片预览文件不支持在线编辑");
+      toast.warning(t("workers.imageNotEditable"));
       return;
     }
     setSaving(true);
@@ -246,7 +248,7 @@ export default function WorkerDetailPage() {
         filename: selectedFile,
         content,
       });
-      toast.success("保存成功");
+      toast.success(t("workers.saveSuccess"));
       await loadFiles(selectedFile);
     } finally {
       setSaving(false);
@@ -255,7 +257,7 @@ export default function WorkerDetailPage() {
 
   const applyDiffMerge = useCallback(async () => {
     if (!activeDiffFile || !selectedFile || saving || fileBusy) return;
-    const ok = window.confirm(`将 ${activeDiffFile} 的内容合并回 ${selectedFile} 并删除 diff 文件，确认继续？`);
+    const ok = window.confirm(t("workers.diffMergeConfirm", { diff: activeDiffFile, file: selectedFile }));
     if (!ok) return;
 
     setSaving(true);
@@ -267,7 +269,7 @@ export default function WorkerDetailPage() {
       await api.post<{ ok: boolean }>(`/workers/${id}/files/delete`, {
         filename: activeDiffFile,
       });
-      toast.success("合并完成");
+      toast.success(t("workers.diffMerged"));
       await loadFiles(selectedFile);
       await loadFileContent(selectedFile);
     } finally {
@@ -282,7 +284,7 @@ export default function WorkerDetailPage() {
       await api.post<{ ok: boolean }>(`/workers/${id}/files/delete`, {
         filename: activeDiffFile,
       });
-      toast.warning("已取消 Diff 合并");
+      toast.warning(t("workers.diffCanceled"));
       await loadFiles(selectedFile || undefined);
       if (selectedFile) {
         await loadFileContent(selectedFile);
@@ -322,14 +324,14 @@ export default function WorkerDetailPage() {
 
   const createFile = async (directory = "") => {
     const filename = window.prompt(
-      directory ? `在 ${directory} 中输入新文件名` : "输入相对路径（目录以 / 结尾，例如 src/ 或 src/helper.py）",
+      directory ? t("workers.newFileInDirectoryPrompt", { directory }) : t("workers.newFilePrompt"),
       "",
     );
     if (!filename) return;
     const clean = normalizeWorkerPathInput(filename);
     if (!clean) return;
     if (directory && clean.endsWith("/")) {
-      toast.warning("请输入文件名");
+      toast.warning(t("workers.fileNameRequired"));
       return;
     }
     const targetPath = normalizeWorkerPathInput(`${directory}${clean}`);
@@ -376,7 +378,7 @@ export default function WorkerDetailPage() {
       setPackageDeleteTarget(entry);
       return;
     }
-    const ok = window.confirm(`确认删除文件 ${entry} ？`);
+    const ok = window.confirm(t("workers.deleteFileConfirm", { name: entry }));
     if (!ok) return;
     await performDeleteEntry(entry);
   }, [fileBusy, mainFilename, performDeleteEntry]);
@@ -387,7 +389,7 @@ export default function WorkerDetailPage() {
 
   const renameCurrentFile = async () => {
     if (!selectedFile || fileBusy) return;
-    const nextName = window.prompt("输入新的文件名", selectedFile);
+    const nextName = window.prompt(t("workers.renamePrompt"), selectedFile);
     if (nextName === null) return;
     const clean = nextName.trim();
     if (!clean) return;
@@ -400,7 +402,7 @@ export default function WorkerDetailPage() {
         new_filename: clean,
       });
       const renamed = data.filename || clean;
-      toast.success("重命名成功");
+      toast.success(t("workers.renameSuccess"));
       await loadFiles(renamed);
       await loadFileContent(renamed);
     } finally {
@@ -443,7 +445,7 @@ export default function WorkerDetailPage() {
 
   const removeWorker = async () => {
     if (!workerInfo || fnBusy) return;
-    const ok = window.confirm(`确认删除 Worker ${workerInfo.name} ？`);
+    const ok = window.confirm(t("workers.deleteConfirm", { name: workerInfo.name }));
     if (!ok) return;
     setFnBusy(true);
     try {
@@ -460,11 +462,11 @@ export default function WorkerDetailPage() {
   };
 
   if (loading) {
-    return <section className="py-6 text-sm text-default-500">正在加载 Worker 详情...</section>;
+    return <section className="py-6 text-sm text-default-500">{t("workers.loadingDetail")}</section>;
   }
 
   if (!workerInfo) {
-    return <section className="py-6 text-sm text-danger">Worker 不存在或已删除</section>;
+    return <section className="py-6 text-sm text-danger">{t("workers.notFound")}</section>;
   }
 
   return (
@@ -483,7 +485,7 @@ export default function WorkerDetailPage() {
                 <div className="flex items-center gap-2">
                   <h1 className="truncate text-base font-semibold text-default-900">{workerInfo.name}</h1>
                   <Chip color={workerInfo.enabled ? "success" : "default"} size="sm" variant="soft">
-                    {workerInfo.enabled ? "已启用" : "已停用"}
+                    {workerInfo.enabled ? t("common.enabled") : t("common.disabled")}
                   </Chip>
                 </div>
                 <p className="truncate text-xs text-default-500">
@@ -493,7 +495,7 @@ export default function WorkerDetailPage() {
             </div>
             <div className="flex items-center justify-end gap-2">
               <HttpDrawer defaultUrl={defaultRunUrl} />
-              <Button size="sm" variant="secondary" onPress={openWorkerLogsModal}>运行日志</Button>
+              <Button size="sm" variant="secondary" onPress={openWorkerLogsModal}>{t("workers.logs")}</Button>
               <Button
                 isPending={fnBusy}
                 size="sm"
@@ -501,9 +503,9 @@ export default function WorkerDetailPage() {
                 className={workerInfo.enabled ? "border-warning text-warning" : undefined}
                 onPress={toggleWorkerEnabled}
               >
-                {workerInfo.enabled ? "停用" : "启用"}
+                {workerInfo.enabled ? t("workers.disable") : t("workers.enable")}
               </Button>
-              <Button isPending={fnBusy} size="sm" variant="danger-soft" onPress={removeWorker}>删除 Worker</Button>
+              <Button isPending={fnBusy} size="sm" variant="danger-soft" onPress={removeWorker}>{t("workers.delete")}</Button>
             </div>
           </div>
         </div>
@@ -519,10 +521,10 @@ export default function WorkerDetailPage() {
                   uploadRef.current?.click();
                 }}
               >
-                上传文件
+                {t("workers.upload")}
               </Button>
               <Button className="w-full" isPending={fileBusy} size="sm" variant="tertiary" onPress={() => void createFile()}>
-                新建文件
+                {t("workers.newFile")}
               </Button>
               <input ref={uploadRef} multiple className="hidden" type="file" onChange={uploadFiles} />
             </div>
@@ -548,11 +550,11 @@ export default function WorkerDetailPage() {
             <div className="border-b border-default-200 p-3 flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-default-700">
-                  {selectedFile || "请选择一个文件"}
+                  {selectedFile || t("workers.selectFile")}
                 </p>
                 {isDiffMode ? (
                   <p className="truncate text-xs text-warning">
-                    Diff 模式：{selectedFile} ↔ {activeDiffFile}
+                    {t("workers.diffMode", { file: `${selectedFile} ↔ ${activeDiffFile}` })}
                   </p>
                 ) : null}
               </div>
@@ -566,7 +568,7 @@ export default function WorkerDetailPage() {
                       isDisabled={saving || fileBusy}
                       onPress={applyDiffMerge}
                     >
-                      应用 Diff
+                      {t("workers.applyDiff")}
                     </Button>
                     <Button
                       size="sm"
@@ -574,7 +576,7 @@ export default function WorkerDetailPage() {
                       isDisabled={saving || fileBusy}
                       onPress={cancelDiffMerge}
                     >
-                      取消 Diff
+                      {t("workers.cancelDiff")}
                     </Button>
                   </>
                 ) : null}
@@ -596,7 +598,7 @@ export default function WorkerDetailPage() {
                       {previewDataURL ? (
                         <img alt={selectedFile} className="max-h-full max-w-full object-contain" src={previewDataURL} />
                       ) : (
-                        <p className="text-sm text-default-500">图片预览加载失败</p>
+                        <p className="text-sm text-default-500">{t("workers.imagePreviewFailed")}</p>
                       )}
                     </div>
                   </div>
@@ -636,7 +638,7 @@ export default function WorkerDetailPage() {
                 )
               ) : (
                 <div className="h-full flex items-center justify-center text-default-500 text-sm">
-                  当前无文件，请先上传或新建文件
+                  {t("workers.noFiles")}
                 </div>
               )}
             </div>
@@ -646,7 +648,7 @@ export default function WorkerDetailPage() {
       <XModal
         isOpen={packageDeleteTarget !== ""}
         size="lg"
-        header="删除 package.json 提示"
+        header={t("workers.deletePackageTitle")}
         isDismissable={!fileBusy}
         isKeyboardDismissDisabled={fileBusy}
         onOpenChange={(open) => {
@@ -660,7 +662,7 @@ export default function WorkerDetailPage() {
               isDisabled={fileBusy}
               onPress={() => setPackageDeleteTarget("")}
             >
-              取消
+              {t("common.cancel")}
             </Button>
             <Button
               variant="danger"
@@ -672,7 +674,7 @@ export default function WorkerDetailPage() {
                 })();
               }}
             >
-              删除
+              {t("common.delete")}
             </Button>
           </>
         }
@@ -685,7 +687,7 @@ export default function WorkerDetailPage() {
       <XModal
         isOpen={directoryDeleteTarget !== ""}
         size="lg"
-        header="删除目录"
+        header={t("workers.deleteDirectoryTitle")}
         isDismissable={!fileBusy}
         isKeyboardDismissDisabled={fileBusy}
         onOpenChange={(open) => {
@@ -699,7 +701,7 @@ export default function WorkerDetailPage() {
               isDisabled={fileBusy}
               onPress={() => setDirectoryDeleteTarget("")}
             >
-              取消
+              {t("common.cancel")}
             </Button>
             <Button
               variant="danger"
@@ -711,7 +713,7 @@ export default function WorkerDetailPage() {
                 })();
               }}
             >
-              删除目录
+              {t("common.delete")}
             </Button>
           </>
         }
@@ -723,7 +725,7 @@ export default function WorkerDetailPage() {
       <XModal
         isOpen={logModalOpen}
         size="cover"
-        header="最近运行日志"
+        header={t("workers.recentLogs")}
         onOpenChange={(open) => {
           setLogModalOpen(open);
         }}

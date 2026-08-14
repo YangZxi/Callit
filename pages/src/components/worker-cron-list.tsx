@@ -5,6 +5,7 @@ import { Icon } from "@iconify/react";
 
 import api from "@/lib/api";
 import { Input } from "@/components/heroui";
+import { useTranslation } from "react-i18next";
 
 export type WorkerCronItem = {
   id: string;
@@ -42,6 +43,7 @@ function toViewRow(item: WorkerCronItem): CronRow {
 }
 
 export default function WorkerCronList({ workerId, isOpen }: WorkerCronListProps) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<CronRow[]>([]);
 
@@ -111,7 +113,7 @@ export default function WorkerCronList({ workerId, isOpen }: WorkerCronListProps
 
     const cron = row.draft.trim();
     if (!cron) {
-      toast.warning("cron 不能为空");
+      toast.warning(t("cron.required"));
       return;
     }
 
@@ -136,7 +138,7 @@ export default function WorkerCronList({ workerId, isOpen }: WorkerCronListProps
   const deleteRow = async (key: string) => {
     const row = rows.find((item) => item.key === key);
     if (!row?.id) return;
-    if (!window.confirm(`确认删除 cron：${row.cron}？`)) {
+    if (!window.confirm(t("cron.deleteConfirm", { cron: row.cron }))) {
       return;
     }
 
@@ -153,23 +155,23 @@ export default function WorkerCronList({ workerId, isOpen }: WorkerCronListProps
     <div className="flex min-h-[220px] flex-col gap-3">
       <Surface className="flex flex-col gap-3 rounded-3xl p-3" variant="secondary">
         <div className="text-sm flex flex-col">
-          支持标准的 Cron 表达式格式，示例：
+          {t("cron.hint")}
           <p>
-            每小时的第 10 分钟执行
+            {t("cron.hourly")}
             <span className="ml-2 rounded bg-default-300 px-1.5 py-0.5 font-mono text-xs">10 * * * *</span>
           </p>
           <p>
-            每 30 秒执行一次
+            {t("cron.everyThirtySeconds")}
             <span className="ml-2 rounded bg-default-300 px-1.5 py-0.5 font-mono text-xs">*/30 * * * * *</span>
           </p>
         </div>
       </Surface>
 
-      {loading ? <p className="text-sm text-default-500">正在加载 Cron 列表...</p> : null}
+      {loading ? <p className="text-sm text-default-500">{t("cron.loading")}</p> : null}
 
       {!loading && rows.length === 0 ? (
         <div className="rounded-lg border border-dashed border-default-300 px-4 py-2 text-sm text-default-500">
-          暂无 Cron 表达式
+          {t("cron.empty")}
         </div>
       ) : null}
 
@@ -184,7 +186,7 @@ export default function WorkerCronList({ workerId, isOpen }: WorkerCronListProps
                   autoFocus
                   className="w-full"
                   name={`cron-${row.key}`}
-                  placeholder="请输入 cron 表达式"
+                  placeholder={t("cron.placeholder")}
                   value={row.draft}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {

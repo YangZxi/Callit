@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import { toast } from "@heroui/react";
 import { BASE_PREFIX } from "@/main";
+import i18n, { currentLocale } from "@/i18n";
 
 // export const BASE_API = `${""}/api`;
 export const BASE_API = `${BASE_PREFIX}/api`;
@@ -23,7 +24,7 @@ type options = {
 async function request<T>(method: HttpMethod, url: string, body?: unknown, options?: options): Promise<T> {
   const target = url.startsWith("http") ? url : `${BASE_API}${url}`;
   const isFormData = body instanceof FormData;
-  const headers: HeadersInit = {};
+  const headers: HeadersInit = { "Accept-Language": currentLocale() };
   if (!isFormData) {
     headers["Content-Type"] = "application/json";
   }
@@ -49,7 +50,7 @@ async function request<T>(method: HttpMethod, url: string, body?: unknown, optio
 }
 
 function notifyError(msg?: string) {
-  const text = msg || "请求失败";
+  const text = msg || i18n.t("api.requestFailed");
   if (toastCache.has(text)) return;
   toastCache.add(text);
 

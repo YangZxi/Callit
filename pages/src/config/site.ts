@@ -2,19 +2,19 @@ export const siteConfig = {
   name: "Callit",
   description: "Self-hosted personal serverless platform.",
   navItems: [
-    { label: "Dashboard", href: `${window.__BASE_PREFIX__}/dashboard`, mobile: true },
-    { label: "Workers", href: `${window.__BASE_PREFIX__}/workers`, mobile: true },
-    { label: "Dependencies", href: `${window.__BASE_PREFIX__}/dependencies`, mobile: true },
+    { labelKey: "nav.dashboard", href: `${window.__BASE_PREFIX__}/dashboard`, mobile: true },
+    { labelKey: "nav.workers", href: `${window.__BASE_PREFIX__}/workers`, mobile: true },
+    { labelKey: "nav.dependencies", href: `${window.__BASE_PREFIX__}/dependencies`, mobile: true },
     {
-      label: "Storage", href: `${window.__BASE_PREFIX__}/storage/kv`, mobile: true,
+      labelKey: "nav.storage", href: `${window.__BASE_PREFIX__}/storage/kv`, mobile: true,
       children: [
-        { label: "KV", href: `${window.__BASE_PREFIX__}/storage/kv`, mobile: true },
-        { label: "DB", href: `${window.__BASE_PREFIX__}/storage/db`, mobile: true },
+        { labelKey: "KV", href: `${window.__BASE_PREFIX__}/storage/kv`, mobile: true },
+        { labelKey: "DB", href: `${window.__BASE_PREFIX__}/storage/db`, mobile: true },
       ],
     },
-    { label: "Config", href: `${window.__BASE_PREFIX__}/config`, mobile: true },
+    { labelKey: "nav.config", href: `${window.__BASE_PREFIX__}/config`, mobile: true },
     // { label: "ClipSync", href: `${window.__BASE_PREFIX__}/clipsync` },
-    { label: "About", href: `${window.__BASE_PREFIX__}/about` },
+    { labelKey: "nav.about", href: `${window.__BASE_PREFIX__}/about` },
   ],
 };
 export type SiteConfig = typeof siteConfig;

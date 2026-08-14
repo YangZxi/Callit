@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Button, Chip, Tabs } from "@heroui/react";
 
 import Pagination from "@/components/heroui/Pagination";
+import { useTranslation } from "react-i18next";
+import { currentLocale } from "@/i18n";
 
 export type WorkerLogItem = {
   id: string;
@@ -46,7 +48,7 @@ function formatLogTime(raw: string): string {
   if (Number.isNaN(dt.getTime())) {
     return raw;
   }
-  return dt.toLocaleString();
+  return dt.toLocaleString(currentLocale());
 }
 
 function formatResultForDisplay(raw: string): string {
@@ -142,6 +144,7 @@ export default function WorkerLogList({
   onPageChange,
   onRefresh,
 }: WorkerLogListProps) {
+  const { t } = useTranslation();
   const [selectedLogId, setSelectedLogId] = useState("");
   const [activeTabsByLogId, setActiveTabsByLogId] = useState<Record<string, LogTabKey>>({});
 
@@ -187,17 +190,17 @@ export default function WorkerLogList({
           onPageChange={onPageChange}
         />
         <Button size="sm" variant="secondary" onPress={onRefresh}>
-          刷新
+          {t("common.refresh")}
         </Button>
       </div>
 
       {loading ? (
-        <p className="text-sm text-default-500">正在加载运行日志...</p>
+        <p className="text-sm text-default-500">{t("workers.logLoading")}</p>
       ) : null}
 
       {!loading && items.length === 0 ? (
         <div className="rounded-lg border border-default-200 px-3 py-4 text-sm text-default-500">
-          暂无运行日志
+          {t("workers.noLogs")}
         </div>
       ) : null}
 
@@ -236,10 +239,10 @@ export default function WorkerLogList({
                       {item.request_id}
                     </p>
                     <p className="text-xs text-default-500">
-                      触发类型：{trigger === "http" ? "HTTP" : "Cron"}
+                      {t("workers.trigger", { type: trigger === "http" ? "HTTP" : "Cron" })}
                     </p>
                     <p className="text-xs text-default-500">
-                      时间：{formatLogTime(item.created_at)}
+                      {t("workers.logTime", { time: formatLogTime(item.created_at) })}
                     </p>
                   </div>
                 </div>
@@ -257,7 +260,7 @@ export default function WorkerLogList({
                     </p>
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-default-500">
                       {renderRunStatus(selectedItem.error)}
-                      <span>耗时 {selectedItem.duration_ms}ms</span>
+                      <span>{t("workers.duration", { duration: selectedItem.duration_ms })}</span>
                       {normalizeTrigger(selectedItem.trigger) === "http" ? (
                         <span>HTTP Status {selectedItem.status}</span>
                       ) : null}
@@ -268,7 +271,7 @@ export default function WorkerLogList({
                 <div className="min-h-0 flex-1 p-1">
                   {availableTabs.length > 0 && activeTabKey ? (
                     <Tabs
-                      aria-label="日志详情"
+                      aria-label={t("workers.logsDetails")}
                       className="flex h-full min-h-0 flex-col"
                       selectedKey={activeTabKey}
                       onSelectionChange={(key) => {
@@ -280,7 +283,7 @@ export default function WorkerLogList({
                       }}
                     >
                       <Tabs.ListContainer className="px-1">
-                        <Tabs.List aria-label="日志详情 Tab" className="w-[unset]">
+                        <Tabs.List aria-label={t("workers.logsDetails")} className="w-[unset]">
                           {availableTabs.map((tab) => (
                             <Tabs.Tab id={tab.key} key={tab.key}>
                               {tab.label}
@@ -302,7 +305,7 @@ export default function WorkerLogList({
                     </Tabs>
                   ) : (
                     <div className="flex h-full items-center justify-center text-sm text-default-400">
-                      无详细输出
+                      {t("workers.noLogDetails")}
                     </div>
                   )}
                 </div>
