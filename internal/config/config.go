@@ -17,9 +17,12 @@ import (
 // 如果你的配置不需要被数据库接管，请不要放在这里
 type AppConfig struct {
 	// MCP
-	MCP_Enable bool   `config:"MCP_ENABLE"`
-	MCP_Token  string `config:"MCP_TOKEN"`
+	MCP_Enable             bool   `config:"MCP_ENABLE"`
+	MCP_Token              string `config:"MCP_TOKEN"`
+	WorkerLogRetentionDays int    `config:"WORKER_LOG_RETENTION_DAYS"`
 }
+
+const WorkerLogRetentionDaysKey = "WORKER_LOG_RETENTION_DAYS"
 
 type Config struct {
 	LogLevel string
@@ -151,9 +154,11 @@ func (cfg *Config) SetAppConfigValue(key, value string) bool {
 		f.SetBool(b)
 		return true
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		// 若未来 AppConfig 有时长字段，可在此扩展（例如识别 time.Duration）
 		i, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
+			return false
+		}
+		if key == WorkerLogRetentionDaysKey && i <= 0 {
 			return false
 		}
 		f.SetInt(i)
@@ -209,8 +214,9 @@ func (cfg *Config) GetAppConfigValue(key string) (string, bool) {
 // 优先级：数据库 > env > 硬编码。
 func (cfg *Config) Sync(ctx context.Context, dao AppConfigDao) error {
 	cfg.AppConfig = AppConfig{
-		MCP_Enable: getBool("MCP_ENABLE", false),
-		MCP_Token:  getEnv("MCP_TOKEN", ""),
+		MCP_Enable:             getBool("MCP_ENABLE", false),
+		MCP_Token:              getEnv("MCP_TOKEN", ""),
+		WorkerLogRetentionDays: getPositiveInt(WorkerLogRetentionDaysKey, 30),
 	}
 	if dao == nil {
 		return nil

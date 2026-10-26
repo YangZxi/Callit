@@ -85,6 +85,7 @@ func (s *Server) AdminUpsertConfigHandler(cfg *config.Config) gin.HandlerFunc {
 		s.configMu.RLock()
 		nextCfg := *cfg
 		s.configMu.RUnlock()
+		previousRetentionDays := nextCfg.AppConfig.WorkerLogRetentionDays
 		for key, value := range updates {
 			if ok := nextCfg.SetAppConfigValue(key, value); !ok {
 				apiError(c, http.StatusBadRequest, "配置值格式错误")
@@ -96,12 +97,18 @@ func (s *Server) AdminUpsertConfigHandler(cfg *config.Config) gin.HandlerFunc {
 		defer cancel()
 
 		s.configMu.Lock()
-		defer s.configMu.Unlock()
 		for key, value := range updates {
 			if err := s.store.AppConfig.SetConfig(ctx, cfg, key, value); err != nil {
+				s.configMu.Unlock()
 				apiError(c, http.StatusInternalServerError, "保存配置失败")
 				return
 			}
+		}
+		retentionDays := cfg.AppConfig.WorkerLogRetentionDays
+		s.configMu.Unlock()
+
+		if retentionDays != previousRetentionDays && s.workerLogCleaner != nil {
+			s.workerLogCleaner.UpdateRetentionDays(retentionDays)
 		}
 		apiSuccess(c, gin.H{"success": true})
 	}

@@ -13,11 +13,12 @@ func (dao testAppConfigDAO) GetConfigs(context.Context) (map[string]string, erro
 	return dao.items, nil
 }
 
-func TestAppConfigKeysIncludesMCPConfig(t *testing.T) {
+func TestAppConfigKeysIncludesSupportedConfig(t *testing.T) {
 	keys := AppConfigKeys()
 	required := map[string]bool{
-		"MCP_ENABLE": false,
-		"MCP_TOKEN":  false,
+		"MCP_ENABLE":              false,
+		"MCP_TOKEN":               false,
+		WorkerLogRetentionDaysKey: false,
 	}
 	for _, key := range keys {
 		if _, ok := required[key]; ok {
@@ -51,12 +52,29 @@ func TestConfigSetAndGetMCPConfigValue(t *testing.T) {
 	}
 }
 
-func TestConfigSyncLoadsDefaultAndDBMCPConfig(t *testing.T) {
+func TestConfigSetAndGetWorkerLogRetentionDays(t *testing.T) {
+	var cfg Config
+	if ok := cfg.SetAppConfigValue(WorkerLogRetentionDaysKey, "45"); !ok {
+		t.Fatalf("设置日志保留天数失败")
+	}
+	value, ok := cfg.GetAppConfigValue(WorkerLogRetentionDaysKey)
+	if !ok || value != "45" {
+		t.Fatalf("读取日志保留天数失败: ok=%v value=%q", ok, value)
+	}
+	for _, invalid := range []string{"0", "-1", "invalid"} {
+		if ok := cfg.SetAppConfigValue(WorkerLogRetentionDaysKey, invalid); ok {
+			t.Fatalf("非法日志保留天数 %q 不应设置成功", invalid)
+		}
+	}
+}
+
+func TestConfigSyncLoadsDatabaseAppConfig(t *testing.T) {
 	var cfg Config
 	if err := cfg.Sync(context.Background(), testAppConfigDAO{
 		items: map[string]string{
-			"MCP_ENABLE": "true",
-			"MCP_TOKEN":  "db-token",
+			"MCP_ENABLE":              "true",
+			"MCP_TOKEN":               "db-token",
+			WorkerLogRetentionDaysKey: "45",
 		},
 	}); err != nil {
 		t.Fatalf("同步配置失败: %v", err)
@@ -67,6 +85,19 @@ func TestConfigSyncLoadsDefaultAndDBMCPConfig(t *testing.T) {
 	}
 	if cfg.AppConfig.MCP_Token != "db-token" {
 		t.Fatalf("期望数据库覆盖后的 MCP_TOKEN 为 db-token，实际为 %q", cfg.AppConfig.MCP_Token)
+	}
+	if cfg.AppConfig.WorkerLogRetentionDays != 45 {
+		t.Fatalf("期望数据库覆盖后的日志保留天数为 45，实际为 %d", cfg.AppConfig.WorkerLogRetentionDays)
+	}
+}
+
+func TestConfigSyncUsesDefaultWorkerLogRetentionDays(t *testing.T) {
+	var cfg Config
+	if err := cfg.Sync(context.Background(), nil); err != nil {
+		t.Fatalf("同步默认配置失败: %v", err)
+	}
+	if cfg.AppConfig.WorkerLogRetentionDays != 30 {
+		t.Fatalf("默认日志保留天数应为 30，实际为 %d", cfg.AppConfig.WorkerLogRetentionDays)
 	}
 }
 

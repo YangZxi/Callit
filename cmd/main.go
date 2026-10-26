@@ -22,6 +22,7 @@ import (
 	magicapi "callit/internal/magic-api"
 	magicDB "callit/internal/magic-api/db"
 	magicKV "callit/internal/magic-api/kv"
+	"callit/internal/maintenance"
 	"callit/internal/mcp"
 	"callit/internal/migrate"
 	"callit/internal/router"
@@ -60,6 +61,13 @@ func main() {
 		slog.Error("加载应用配置失败", "err", err)
 		os.Exit(1)
 	}
+	workerLogCleaner := maintenance.NewWorkerLogCleaner(store, cfg.AppConfig.WorkerLogRetentionDays)
+	if err := workerLogCleaner.Prepare(context.Background()); err != nil {
+		slog.Error("准备 Worker 日志自动清理失败，将继续启动服务", "err", err)
+	}
+	backgroundCtx, stopBackground := context.WithCancel(context.Background())
+	defer stopBackground()
+	workerLogCleanerDone := workerLogCleaner.Start(backgroundCtx)
 	// worker 目录改造  2026-04-15
 	migrateService := migrate.NewService(store, cfg)
 	if err := migrateService.RebuildWorkerDirStructure(context.Background()); err != nil {
@@ -81,7 +89,7 @@ func main() {
 
 	invoker := executor.NewService(store, cfg)
 	cronManager := cron.NewManager(store, invoker, time.Local)
-	if err := cronManager.Start(context.Background()); err != nil {
+	if err := cronManager.Start(backgroundCtx); err != nil {
 		slog.Error("启动 cron 调度器失败", "err", err)
 		os.Exit(1)
 	}
@@ -89,7 +97,8 @@ func main() {
 	redisClient := newRedisClient(cfg)
 	routerEngine := router.NewEngine(store, reg, cfg, invoker)
 	adminEngine := admin.NewEngineWithOptions(store, reg, cronManager, &cfg, admin.StorageStore{
-		KVStore: adminStorage.NewRedisKVStore(redisClient),
+		KVStore:          adminStorage.NewRedisKVStore(redisClient),
+		WorkerLogCleaner: workerLogCleaner,
 	})
 	mcpHandler := mcp.NewHandler(store, reg, cronManager, &cfg)
 	handler := serverRouteHandler(adminEngine, mcpHandler, routerEngine, &cfg)
@@ -142,6 +151,7 @@ func main() {
 		case sig := <-sigCh:
 			slog.Warn("收到退出信号", "signal", sig.String())
 		}
+		stopBackground()
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -154,7 +164,10 @@ func main() {
 		return nil
 	})
 
-	if err := group.Wait(); err != nil {
+	err = group.Wait()
+	stopBackground()
+	<-workerLogCleanerDone
+	if err != nil {
 		slog.Error("服务退出异常", "err", err)
 		os.Exit(1)
 	}

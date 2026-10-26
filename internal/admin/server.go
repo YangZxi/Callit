@@ -38,24 +38,26 @@ const (
 
 // Server 表示 Admin 服务。
 type Server struct {
-	store        *db.Store
-	reg          *router.Registry
-	cronReloader interface{ Reload(context.Context) error }
-	idGenerator  *snowflake.Generator
-	dataDir      string
-	workersDir   string
-	adminToken   string
-	workerSvc    *WorkerService
-	dashboardSvc *DashboardService
-	storageKvSvc *adminStorage.KVService
-	configMu     sync.RWMutex
+	store            *db.Store
+	reg              *router.Registry
+	cronReloader     interface{ Reload(context.Context) error }
+	workerLogCleaner interface{ UpdateRetentionDays(int) }
+	idGenerator      *snowflake.Generator
+	dataDir          string
+	workersDir       string
+	adminToken       string
+	workerSvc        *WorkerService
+	dashboardSvc     *DashboardService
+	storageKvSvc     *adminStorage.KVService
+	configMu         sync.RWMutex
 
 	dependencyTaskMu      sync.Mutex
 	dependencyTaskRunning bool
 }
 
 type StorageStore struct {
-	KVStore adminStorage.KVStore
+	KVStore          adminStorage.KVStore
+	WorkerLogCleaner interface{ UpdateRetentionDays(int) }
 }
 
 func writeAPIResponse(c *gin.Context, httpStatus int, code int, msg string, data any) {
@@ -93,16 +95,17 @@ func NewEngineWithOptions(store *db.Store, reg *router.Registry, cronReloader in
 		runtimeLibDir = filepath.Join(cfg.DataDir, ".lib")
 	}
 	s := &Server{
-		store:        store,
-		reg:          reg,
-		cronReloader: cronReloader,
-		idGenerator:  snowflake.NewGenerator(1),
-		dataDir:      cfg.DataDir,
-		workersDir:   workersDir,
-		adminToken:   cfg.AdminToken,
-		workerSvc:    NewWorkerService(store, reg, cronReloader, workersDir, workerTmpDir, runtimeLibDir, cfg.WorkerMaxDirDepth),
-		dashboardSvc: NewDashboardService(store),
-		storageKvSvc: adminStorage.NewKVService(opts.KVStore),
+		store:            store,
+		reg:              reg,
+		cronReloader:     cronReloader,
+		workerLogCleaner: opts.WorkerLogCleaner,
+		idGenerator:      snowflake.NewGenerator(1),
+		dataDir:          cfg.DataDir,
+		workersDir:       workersDir,
+		adminToken:       cfg.AdminToken,
+		workerSvc:        NewWorkerService(store, reg, cronReloader, workersDir, workerTmpDir, runtimeLibDir, cfg.WorkerMaxDirDepth),
+		dashboardSvc:     NewDashboardService(store),
+		storageKvSvc:     adminStorage.NewKVService(opts.KVStore),
 	}
 	e := gin.New()
 	e.Use(gin.Recovery(), common.RequestIDMiddleware())

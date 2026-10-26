@@ -23,6 +23,14 @@ import (
 	"callit/internal/router"
 )
 
+type recordingWorkerLogCleaner struct {
+	retentionDays []int
+}
+
+func (cleaner *recordingWorkerLogCleaner) UpdateRetentionDays(retentionDays int) {
+	cleaner.retentionDays = append(cleaner.retentionDays, retentionDays)
+}
+
 func TestIsAdminAPIPath(t *testing.T) {
 	tests := []struct {
 		path string
@@ -651,11 +659,13 @@ func TestAdminConfigAPIIncludesAndUpdatesMCPConfig(t *testing.T) {
 		AdminToken:  "test-token",
 		DataDir:     t.TempDir(),
 		AppConfig: config.AppConfig{
-			MCP_Enable: false,
-			MCP_Token:  "",
+			MCP_Enable:             false,
+			MCP_Token:              "",
+			WorkerLogRetentionDays: 30,
 		},
 	}
-	engine := NewEngine(store, router.New(), nil, &cfg)
+	cleaner := &recordingWorkerLogCleaner{}
+	engine := NewEngineWithOptions(store, router.New(), nil, &cfg, StorageStore{WorkerLogCleaner: cleaner})
 
 	getResp := doAdminJSONRequest(t, engine, http.MethodGet, "/admin/api/config", nil)
 	if getResp.Code != http.StatusOK {
@@ -671,6 +681,7 @@ func TestAdminConfigAPIIncludesAndUpdatesMCPConfig(t *testing.T) {
 
 	foundEnable := false
 	foundToken := false
+	foundRetentionDays := false
 	for _, item := range getBody.Data {
 		if item.Key == "MCP_ENABLE" {
 			foundEnable = true
@@ -678,15 +689,19 @@ func TestAdminConfigAPIIncludesAndUpdatesMCPConfig(t *testing.T) {
 		if item.Key == "MCP_TOKEN" {
 			foundToken = true
 		}
+		if item.Key == config.WorkerLogRetentionDaysKey {
+			foundRetentionDays = true
+		}
 	}
-	if !foundEnable || !foundToken {
-		t.Fatalf("配置列表未包含 MCP 配置项: %#v", getBody.Data)
+	if !foundEnable || !foundToken || !foundRetentionDays {
+		t.Fatalf("配置列表缺少预期配置项: %#v", getBody.Data)
 	}
 
 	updateResp := doAdminJSONRequest(t, engine, http.MethodPost, "/admin/api/config", map[string]any{
 		"app_config": map[string]any{
-			"MCP_ENABLE": "true",
-			"MCP_TOKEN":  "new-mcp-token",
+			"MCP_ENABLE":                     "true",
+			"MCP_TOKEN":                      "new-mcp-token",
+			config.WorkerLogRetentionDaysKey: "7",
 		},
 	})
 	if updateResp.Code != http.StatusOK {
@@ -698,6 +713,12 @@ func TestAdminConfigAPIIncludesAndUpdatesMCPConfig(t *testing.T) {
 	}
 	if cfg.AppConfig.MCP_Token != "new-mcp-token" {
 		t.Fatalf("期望 MCP_TOKEN 已更新，实际为 %q", cfg.AppConfig.MCP_Token)
+	}
+	if cfg.AppConfig.WorkerLogRetentionDays != 7 {
+		t.Fatalf("期望日志保留天数已更新为 7，实际为 %d", cfg.AppConfig.WorkerLogRetentionDays)
+	}
+	if len(cleaner.retentionDays) != 1 || cleaner.retentionDays[0] != 7 {
+		t.Fatalf("配置更新后应触发日志清理，实际为 %#v", cleaner.retentionDays)
 	}
 }
 

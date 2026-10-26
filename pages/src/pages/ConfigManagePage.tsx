@@ -8,7 +8,8 @@ import { useTranslation } from "react-i18next";
 
 type AppConfigKey =
   | "MCP_ENABLE"
-  | "MCP_TOKEN";
+  | "MCP_TOKEN"
+  | "WORKER_LOG_RETENTION_DAYS";
 
 type AdminConfigItem = {
   key: string;
@@ -27,16 +28,29 @@ type ConfigValues = Record<AppConfigKey, string>;
 const defaultValues: ConfigValues = {
   MCP_ENABLE: "false",
   MCP_TOKEN: "",
+  WORKER_LOG_RETENTION_DAYS: "30",
 };
 
 const fields: Array<{
   key: AppConfigKey;
   label: string;
+  labelKey?: string;
   placeholder: string;
   type?: "text" | "password" | "number" | "switch";
+  min?: number;
+  descriptionKey?: string;
 }> = [
   { key: "MCP_ENABLE", label: "MCP Enable", placeholder: "false", type: "switch" },
   { key: "MCP_TOKEN", label: "MCP Token", placeholder: "mcp-token", type: "text" },
+  {
+    key: "WORKER_LOG_RETENTION_DAYS",
+    label: "Worker Log Retention Days",
+    labelKey: "config.workerLogRetentionDays",
+    placeholder: "30",
+    type: "number",
+    min: 1,
+    descriptionKey: "config.workerLogRetentionDescription",
+  },
 ];
 
 function labelOfSource(source: AdminConfigItem["source"], t: (key: string) => string) {
@@ -58,7 +72,14 @@ export default function ConfigManagePage() {
   const [sources, setSources] = useState<Partial<Record<AppConfigKey, ConfigSource>>>({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
 
-  const intErrors = useMemo(() => ({} as Partial<Record<AppConfigKey, string>>), []);
+  const intErrors = useMemo(() => {
+    const errors: Partial<Record<AppConfigKey, string>> = {};
+    const retentionDays = values.WORKER_LOG_RETENTION_DAYS.trim();
+    if (!/^\d+$/.test(retentionDays) || Number(retentionDays) <= 0) {
+      errors.WORKER_LOG_RETENTION_DAYS = t("config.positiveInteger");
+    }
+    return errors;
+  }, [t, values.WORKER_LOG_RETENTION_DAYS]);
 
   const sourceHint = (key: AppConfigKey) => {
     const meta = sources[key];
@@ -94,6 +115,7 @@ export default function ConfigManagePage() {
 
   const save = async () => {
     setSubmitAttempted(true);
+    if (Object.keys(intErrors).length > 0) return;
 
     setSaving(true);
     try {
@@ -106,10 +128,11 @@ export default function ConfigManagePage() {
   };
 
   const renderFormField = (field: typeof fields[0], invalid: boolean) => {
+    const label = field.labelKey ? t(field.labelKey) : field.label;
     if (field.type === "switch") {
       return (
         <div className="flex flex-col gap-1">
-          <Label>{field.label}</Label>
+          <Label>{label}</Label>
           <Switch
             value={values[field.key] === "true"}
             onValueChange={(value) => {
@@ -122,10 +145,12 @@ export default function ConfigManagePage() {
       return <Input
         key={field.key}
         // description={sourceHint(field.key)}
+        description={field.descriptionKey ? t(field.descriptionKey) : undefined}
         errorMessage={invalid ? intErrors[field.key] : undefined}
         isInvalid={invalid}
         isRequired={field.type === "number"}
-        label={field.label}
+        label={label}
+        min={field.min}
         name={field.key}
         placeholder={field.placeholder}
         type={field.type ?? "text"}

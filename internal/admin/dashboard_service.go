@@ -46,30 +46,40 @@ func NewDashboardService(store *db.Store) *DashboardService {
 
 func (s *DashboardService) Metrics(ctx context.Context) (message.DashboardMetricsResponse, error) {
 	now := s.now().UTC()
-	workers, err := s.store.Worker.List(ctx, "")
-	if err != nil {
-		return message.DashboardMetricsResponse{}, err
-	}
+	var response message.DashboardMetricsResponse
+	err := s.store.Transaction(ctx, func(snapshot *db.Store) error {
+		workers, err := snapshot.Worker.List(ctx, "")
+		if err != nil {
+			return err
+		}
 
-	logs24hRaw, err := s.store.WorkerLog.ListSince(ctx, "", now.Add(-24*time.Hour))
-	if err != nil {
-		return message.DashboardMetricsResponse{}, err
-	}
-	logs24h := filterLogsBefore(logs24hRaw, now.Add(-24*time.Hour), now)
-	logs6h := filterLogsBefore(logs24h, now.Add(-6*time.Hour), now)
+		summary24h, err := snapshot.WorkerLog.SummaryBetween(ctx, now.Add(-24*time.Hour), now)
+		if err != nil {
+			return err
+		}
+		summary6h, err := snapshot.WorkerLog.SummaryBetween(ctx, now.Add(-6*time.Hour), now)
+		if err != nil {
+			return err
+		}
+		workerAggregates, err := snapshot.WorkerLog.AggregateByWorkerBetween(ctx, now.Add(-24*time.Hour), now)
+		if err != nil {
+			return err
+		}
+		lastFailedWorkers, err := s.lastFailedWorkers(ctx, snapshot, workers)
+		if err != nil {
+			return err
+		}
 
-	lastFailedWorkers, err := s.lastFailedWorkers(ctx, workers)
-	if err != nil {
-		return message.DashboardMetricsResponse{}, err
-	}
-
-	return message.DashboardMetricsResponse{
-		GeneratedAt:       now,
-		Workers:           buildDashboardWorkerCounts(workers),
-		Summary:           buildDashboardSummary(logs24h, logs6h, len(lastFailedWorkers)),
-		LastFailedWorkers: lastFailedWorkers,
-		WorkerRankings:    buildDashboardWorkerRankings(workers, logs24h),
-	}, nil
+		response = message.DashboardMetricsResponse{
+			GeneratedAt:       now,
+			Workers:           buildDashboardWorkerCounts(workers),
+			Summary:           buildDashboardSummary(summary24h, summary6h, len(lastFailedWorkers)),
+			LastFailedWorkers: lastFailedWorkers,
+			WorkerRankings:    buildDashboardWorkerRankings(workers, workerAggregates),
+		}
+		return nil
+	})
+	return response, err
 }
 
 func (s *DashboardService) WorkerTrend(ctx context.Context, workerID string) ([]message.DashboardWorkerTrendPoint, error) {
@@ -91,50 +101,35 @@ func (s *DashboardService) WorkerTrend(ctx context.Context, workerID string) ([]
 	startHour := endHour.Add(-(dashboardTrendBuckets - 1) * time.Hour)
 	finish := endHour.Add(time.Hour)
 
-	logs, err := s.store.WorkerLog.ListSince(ctx, workerID, startHour)
+	aggregates, err := s.store.WorkerLog.TrendBetween(ctx, workerID, startHour, finish)
 	if err != nil {
 		return nil, err
 	}
+	aggregatesByHour := make(map[int64]db.WorkerLogTrendAggregate, len(aggregates))
+	for _, aggregate := range aggregates {
+		aggregatesByHour[aggregate.HourUnix] = aggregate
+	}
 
 	points := make([]message.DashboardWorkerTrendPoint, dashboardTrendBuckets)
-	durationSums := make([]int64, dashboardTrendBuckets)
 	for i := range points {
 		points[i].Time = startHour.Add(time.Duration(i) * time.Hour)
-	}
-
-	for _, log := range logs {
-		createdAt := log.CreatedAt.UTC()
-		if createdAt.Before(startHour) || !createdAt.Before(finish) {
+		aggregate, ok := aggregatesByHour[points[i].Time.Unix()/int64(time.Hour/time.Second)]
+		if !ok {
 			continue
 		}
-		index := int(createdAt.Sub(startHour) / time.Hour)
-		if index < 0 || index >= len(points) {
-			continue
-		}
-
-		points[index].Total++
-		durationSums[index] += log.DurationMS
-		if log.IsSuccess() {
-			points[index].Success++
-		} else {
-			points[index].Failed++
-		}
-	}
-
-	for i := range points {
-		if points[i].Total == 0 {
-			continue
-		}
-		points[i].SuccessRate = ratePtr(points[i].Success, points[i].Total)
-		avg := durationSums[i] / int64(points[i].Total)
+		points[i].Total = aggregate.Total
+		points[i].Success = aggregate.Success
+		points[i].Failed = aggregate.Failed
+		points[i].SuccessRate = ratePtr(aggregate.Success, aggregate.Total)
+		avg := aggregate.DurationTotal / int64(aggregate.Total)
 		points[i].AvgDurationMS = &avg
 	}
 	return points, nil
 }
 
-func (s *DashboardService) lastFailedWorkers(ctx context.Context, workers []model.Worker) ([]message.DashboardLastFailedWorker, error) {
+func (s *DashboardService) lastFailedWorkers(ctx context.Context, snapshot *db.Store, workers []model.Worker) ([]message.DashboardLastFailedWorker, error) {
 	workerNames := workerNameMap(workers)
-	latestLogs, err := s.store.WorkerLog.LatestPerWorker(ctx)
+	latestLogs, err := snapshot.WorkerLog.LatestPerWorker(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -174,83 +169,36 @@ func buildDashboardWorkerCounts(workers []model.Worker) message.DashboardWorkerC
 	return counts
 }
 
-func buildDashboardSummary(logs24h []model.WorkerLog, logs6h []model.WorkerLog, lastFailedWorkersCount int) message.DashboardSummary {
-	summary24h := summarizeDashboardLogs(logs24h)
-	summary6h := summarizeDashboardLogs(logs6h)
-
+func buildDashboardSummary(summary24h db.WorkerLogSummary, summary6h db.WorkerLogSummary, lastFailedWorkersCount int) message.DashboardSummary {
 	return message.DashboardSummary{
-		SuccessRate24h:         summary24h.successRate,
-		SuccessRate6h:          summary6h.successRate,
-		AvgDurationMS24h:       summary24h.avgDurationMS,
-		TotalCalls24h:          summary24h.total,
-		SuccessCalls24h:        summary24h.success,
-		FailedCalls24h:         summary24h.failed,
-		TotalCalls6h:           summary6h.total,
-		FailedCalls6h:          summary6h.failed,
+		SuccessRate24h:         ratePtr(summary24h.Success, summary24h.Total),
+		SuccessRate6h:          ratePtr(summary6h.Success, summary6h.Total),
+		AvgDurationMS24h:       averageDurationPtr(summary24h.DurationTotal, summary24h.Total),
+		TotalCalls24h:          summary24h.Total,
+		SuccessCalls24h:        summary24h.Success,
+		FailedCalls24h:         summary24h.Failed,
+		TotalCalls6h:           summary6h.Total,
+		FailedCalls6h:          summary6h.Failed,
 		LastFailedWorkersCount: lastFailedWorkersCount,
 	}
 }
 
-type dashboardLogSummary struct {
-	total         int
-	success       int
-	failed        int
-	successRate   *float64
-	avgDurationMS *int64
-}
-
-func summarizeDashboardLogs(logs []model.WorkerLog) dashboardLogSummary {
-	var summary dashboardLogSummary
-	var durationTotal int64
-	for _, log := range logs {
-		summary.total++
-		durationTotal += log.DurationMS
-		if log.IsSuccess() {
-			summary.success++
-		} else {
-			summary.failed++
-		}
-	}
-	if summary.total == 0 {
-		return summary
-	}
-	summary.successRate = ratePtr(summary.success, summary.total)
-	avg := durationTotal / int64(summary.total)
-	summary.avgDurationMS = &avg
-	return summary
-}
-
-func buildDashboardWorkerRankings(workers []model.Worker, logs []model.WorkerLog) message.DashboardWorkerRankings {
+func buildDashboardWorkerRankings(workers []model.Worker, workerAggregates []db.WorkerLogAggregate) message.DashboardWorkerRankings {
 	workerNames := workerNameMap(workers)
-	aggregatesByWorker := make(map[string]*dashboardWorkerAggregate)
-	for _, log := range logs {
-		workerName, ok := workerNames[log.WorkerID]
+	aggregates := make([]dashboardWorkerAggregate, 0, len(workerAggregates))
+	for _, workerAggregate := range workerAggregates {
+		workerName, ok := workerNames[workerAggregate.WorkerID]
 		if !ok {
 			continue
 		}
-		aggregate := aggregatesByWorker[log.WorkerID]
-		if aggregate == nil {
-			aggregate = &dashboardWorkerAggregate{
-				workerID:   log.WorkerID,
-				workerName: workerName,
-			}
-			aggregatesByWorker[log.WorkerID] = aggregate
-		}
-
-		aggregate.total++
-		aggregate.durationTotal += log.DurationMS
-		if log.IsSuccess() {
-			aggregate.success++
-		} else {
-			aggregate.failed++
-		}
-	}
-
-	aggregates := make([]dashboardWorkerAggregate, 0, len(aggregatesByWorker))
-	for _, aggregate := range aggregatesByWorker {
-		if aggregate.total > 0 {
-			aggregates = append(aggregates, *aggregate)
-		}
+		aggregates = append(aggregates, dashboardWorkerAggregate{
+			workerID:      workerAggregate.WorkerID,
+			workerName:    workerName,
+			total:         workerAggregate.Total,
+			success:       workerAggregate.Success,
+			failed:        workerAggregate.Failed,
+			durationTotal: workerAggregate.DurationTotal,
+		})
 	}
 
 	slowest := append([]dashboardWorkerAggregate(nil), aggregates...)
@@ -312,24 +260,20 @@ func buildReliableRankItems(aggregates []dashboardWorkerAggregate) []message.Das
 	return items
 }
 
-func filterLogsBefore(logs []model.WorkerLog, since time.Time, before time.Time) []model.WorkerLog {
-	filtered := make([]model.WorkerLog, 0, len(logs))
-	for _, log := range logs {
-		createdAt := log.CreatedAt.UTC()
-		if createdAt.Before(since.UTC()) || !createdAt.Before(before.UTC()) {
-			continue
-		}
-		filtered = append(filtered, log)
-	}
-	return filtered
-}
-
 func workerNameMap(workers []model.Worker) map[string]string {
 	names := make(map[string]string, len(workers))
 	for _, worker := range workers {
 		names[worker.ID] = worker.Name
 	}
 	return names
+}
+
+func averageDurationPtr(durationTotal int64, total int) *int64 {
+	if total <= 0 {
+		return nil
+	}
+	average := durationTotal / int64(total)
+	return &average
 }
 
 func ratePtr(success int, total int) *float64 {

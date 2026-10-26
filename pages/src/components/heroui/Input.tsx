@@ -10,6 +10,7 @@ type InputProps = {
 	name?: string;
 	type?: React.HTMLInputTypeAttribute;
 	step?: number | string;
+	min?: number | string;
 	className?: string;
 	maxLength?: number;
 	isRequired?: boolean;
@@ -31,6 +32,7 @@ export default function Input({
 	name,
 	type = "text",
 	step,
+	min,
 	className,
 	maxLength,
 	isRequired,
@@ -62,6 +64,7 @@ export default function Input({
 				autoFocus={autoFocus}
 				disabled={isDisabled}
 				maxLength={maxLength}
+				min={min}
 				placeholder={placeholder}
 				step={step}
 				value={value}

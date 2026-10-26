@@ -24,7 +24,7 @@ func (WorkerLog) TableName() string {
 }
 
 func (log WorkerLog) IsSuccess() bool {
-	return log.Error == "" && log.Status >= 200 && log.Status < 500
+	return log.Error == "" && log.Status >= 200 && log.Status < 400
 }
 
 func (log WorkerLog) IsServerError() bool {

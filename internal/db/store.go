@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -33,6 +34,9 @@ func Open(dbPath string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
+	if err := enableIncrementalAutoVacuumForEmptyDatabase(gormDB); err != nil {
+		return nil, err
+	}
 	if err := gormDB.Exec("PRAGMA foreign_keys = ON;").Error; err != nil {
 		return nil, fmt.Errorf("设置 PRAGMA 失败: %w", err)
 	}
@@ -40,12 +44,36 @@ func Open(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("执行迁移失败: %w", err)
 	}
 
+	return newStore(gormDB), nil
+}
+
+func newStore(gormDB *gorm.DB) *Store {
 	store := &Store{gormDB: gormDB}
 	store.Worker = &WorkerDAO{db: gormDB}
 	store.WorkerLog = &WorkerLogDAO{db: gormDB}
 	store.CronTask = &CronTaskDAO{db: gormDB}
 	store.AppConfig = &AppConfigDAO{db: gormDB}
-	return store, nil
+	return store
+}
+
+func enableIncrementalAutoVacuumForEmptyDatabase(gormDB *gorm.DB) error {
+	var schemaObjectCount int64
+	if err := gormDB.Raw("SELECT COUNT(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'").Scan(&schemaObjectCount).Error; err != nil {
+		return fmt.Errorf("检查数据库结构失败: %w", err)
+	}
+	if schemaObjectCount > 0 {
+		return nil
+	}
+	if err := gormDB.Exec("PRAGMA auto_vacuum = INCREMENTAL;").Error; err != nil {
+		return fmt.Errorf("设置 auto_vacuum 失败: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) Transaction(ctx context.Context, fn func(*Store) error) error {
+	return s.gormDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return fn(newStore(tx))
+	})
 }
 
 // Close 关闭数据库连接。
