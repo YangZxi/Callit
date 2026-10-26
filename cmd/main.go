@@ -98,6 +98,7 @@ func main() {
 	routerEngine := router.NewEngine(store, reg, cfg, invoker)
 	adminEngine := admin.NewEngineWithOptions(store, reg, cronManager, &cfg, admin.StorageStore{
 		KVStore:          adminStorage.NewRedisKVStore(redisClient),
+		WorkerDB:         workerDBService.SQLDB(),
 		WorkerLogCleaner: workerLogCleaner,
 	})
 	mcpHandler := mcp.NewHandler(store, reg, cronManager, &cfg)

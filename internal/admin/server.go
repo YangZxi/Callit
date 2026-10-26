@@ -49,6 +49,7 @@ type Server struct {
 	workerSvc        *WorkerService
 	dashboardSvc     *DashboardService
 	storageKvSvc     *adminStorage.KVService
+	storageDBSvc     *adminStorage.DBService
 	configMu         sync.RWMutex
 
 	dependencyTaskMu      sync.Mutex
@@ -57,6 +58,7 @@ type Server struct {
 
 type StorageStore struct {
 	KVStore          adminStorage.KVStore
+	WorkerDB         *sql.DB
 	WorkerLogCleaner interface{ UpdateRetentionDays(int) }
 }
 
@@ -106,6 +108,7 @@ func NewEngineWithOptions(store *db.Store, reg *router.Registry, cronReloader in
 		workerSvc:        NewWorkerService(store, reg, cronReloader, workersDir, workerTmpDir, runtimeLibDir, cfg.WorkerMaxDirDepth),
 		dashboardSvc:     NewDashboardService(store),
 		storageKvSvc:     adminStorage.NewKVService(opts.KVStore),
+		storageDBSvc:     adminStorage.NewDBService(opts.WorkerDB),
 	}
 	e := gin.New()
 	e.Use(gin.Recovery(), common.RequestIDMiddleware())
@@ -139,6 +142,12 @@ func NewEngineWithOptions(store *db.Store, reg *router.Registry, cronReloader in
 		api.GET("/kv/keys", s.listStorageKVKeys)
 		api.GET("/kv/key", s.getStorageKVKeyDetail)
 		api.POST("/kv/key/delete", s.deleteStorageKVKey)
+
+		api.GET("/db/tables", s.listStorageDBTables)
+		api.POST("/db/query", s.queryStorageDB)
+		api.POST("/db/rows/create", s.createStorageDBRow)
+		api.POST("/db/rows/update", s.updateStorageDBRow)
+		api.POST("/db/rows/delete", s.deleteStorageDBRows)
 
 		api.GET("/workers/:id/logs", s.listWorkerLogs)
 		api.GET("/workers/:id/crons", s.listWorkerCrons)

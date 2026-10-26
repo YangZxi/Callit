@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
+import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { ToastProvider } from "@heroui/react";
 
 import App from "./App.tsx";
@@ -44,12 +44,19 @@ function AppShell({ children }: { children: React.ReactNode }) {
   </div>;
 }
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <BrowserRouter>
+const router = createBrowserRouter([
+  {
+    path: "*",
+    element: (
       <AppShell>
         <App />
       </AppShell>
-    </BrowserRouter>
+    ),
+  },
+]);
+
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  <React.StrictMode>
+    <RouterProvider router={router} />
   </React.StrictMode>,
 );

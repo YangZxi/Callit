@@ -21,3 +21,9 @@
 - 包含 `kv` 与 `db` 的调用方式
 - 包含 `namespace` 规则、builder 规则、返回值说明
 - 包含 Node / Python 两个 runtime 的示例
+
+# 数据库管理
+[Worker 数据库管理](./storage_db.md)
+- 包含 WHERE 字段补全、表结构、分页和排序
+- 包含抽屉新增、编辑与批量删除提交方式
+- 包含管理接口和字段值格式

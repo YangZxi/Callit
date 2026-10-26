@@ -24,6 +24,10 @@ type Service struct {
 	db *sql.DB
 }
 
+func (service *Service) SQLDB() *sql.DB {
+	return service.db
+}
+
 func OpenSQLiteService(dbPath string) (*Service, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		return nil, fmt.Errorf("创建 worker.db 目录失败: %w", err)
